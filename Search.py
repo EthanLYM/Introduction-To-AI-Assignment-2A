@@ -267,21 +267,21 @@ def cli_mode(filepath, method):
 # ══════════════════════════════════════════════════════════════════
 #  THEME / CONSTANTS
 # ══════════════════════════════════════════════════════════════════
-BG        = "#0f1117"
-PANEL     = "#16181f"
-PANEL2    = "#1e2130"
-BORDER    = "#2a2d3e"
-ACCENT    = "#6c8eff"       # blue
-ACCENT2   = "#ff6b6b"       # red/orange  — current node
-SUCCESS   = "#4ecca3"       # teal        — solution
-WARN      = "#ffd166"       # yellow      — frontier
-VISITED_C = "#3a3f5c"       # dark purple — visited
-NODE_BG   = "#1e2130"
-NODE_FG   = "#e0e6ff"
-MUTED     = "#4a5080"
-GRID_MAIN = "#1a1d2e"       # graph-paper major lines
-GRID_MINOR= "#13151f"       # graph-paper minor lines
-AXIS_CLR  = "#2a2d3e"
+BG        = "#f5f6fa"
+PANEL     = "#ffffff"
+PANEL2    = "#eef0f7"
+BORDER    = "#c8cce0"
+ACCENT    = "#3a5fd9"       # blue
+ACCENT2   = "#e03c3c"       # red/orange  — current node
+SUCCESS   = "#1a9e72"       # teal        — solution
+WARN      = "#c08800"       # yellow      — frontier
+VISITED_C = "#8fa3e8"       # medium blue-purple — visited
+NODE_BG   = "#c8cfe8"
+NODE_FG   = "#1a1d2e"
+MUTED     = "#7a82aa"
+GRID_MAIN = "#dce0ee"       # graph-paper major lines
+GRID_MINOR= "#eaedf6"       # graph-paper minor lines
+AXIS_CLR  = "#b0b8d8"
 
 FONT_HEAD = ("Segoe UI", 11, "bold")
 FONT_UI   = ("Segoe UI", 10)
@@ -348,8 +348,8 @@ class GraphCanvas(tk.Canvas):
         if not self.nodes: return
         xs = [v[0] for v in self.nodes.values()]
         ys = [v[1] for v in self.nodes.values()]
-        mn_x, mx_x = min(xs), max(xs)
-        mn_y, mx_y = min(ys), max(ys)
+        mn_x, mx_x = 0, max(xs)   # always start from 0
+        mn_y, mx_y = 0, max(ys)   # always start from 0
         w = max(self.winfo_width(),  400)
         h = max(self.winfo_height(), 300)
         sx = (w - 2*PADDING) / max(mx_x - mn_x, 1)
@@ -444,6 +444,10 @@ class GraphCanvas(tk.Canvas):
         for i in range(len(self.solution_path) - 1):
             sol_set.add((self.solution_path[i], self.solution_path[i+1]))
 
+        # Find which pairs are bidirectional so we can offset them
+        edge_pairs = set((n1, n2) for n1, n2, _ in self.edges_raw)
+        drawn = set()
+
         for n1, n2, cost in self.edges_raw:
             if n1 not in self.nodes or n2 not in self.nodes: continue
             x1, y1 = self.to_canvas(*self.nodes[n1])
@@ -453,18 +457,27 @@ class GraphCanvas(tk.Canvas):
             clr    = SUCCESS if in_sol else BORDER
             w      = 3 if in_sol else 1.5
 
-            # offset parallel edges slightly
+            # Only offset if the reverse direction also exists (bidirectional)
+            is_bidir = (n2, n1) in edge_pairs
             dx, dy = x2-x1, y2-y1
             length = math.hypot(dx, dy) or 1
-            px, py = -dy/length * 4, dx/length * 4
+            if is_bidir:
+                px, py = -dy/length * 4, dx/length * 4
+            else:
+                px, py = 0, 0
 
             self.create_line(x1+px, y1+py, x2+px, y2+py,
                              fill=clr, width=w,
                              arrow=tk.LAST, arrowshape=(10, 12, 4),
                              smooth=False)
-            mx, my = (x1+x2)/2 + px, (y1+y2)/2 + py - 9
-            self.create_text(mx, my, text=f"{cost:.0f}",
-                             fill="#555e7a", font=FONT_TINY)
+
+            # Only draw cost label once per pair
+            pair = tuple(sorted([n1, n2]))
+            if pair not in drawn:
+                mx, my = (x1+x2)/2 + px, (y1+y2)/2 + py - 9
+                self.create_text(mx, my, text=f"{cost:.0f}",
+                                 fill=MUTED, font=FONT_TINY)
+                drawn.add(pair)
 
     # ── nodes ─────────────────────────────────────────────────────
     def _draw_nodes(self):
@@ -478,13 +491,13 @@ class GraphCanvas(tk.Canvas):
             elif self.solution_path and nid in self.solution_path:
                 fill, ring, rw = SUCCESS,  "#ffffff", 2
             elif nid in self.visited:
-                fill, ring, rw = VISITED_C, ACCENT, 1
+                fill, ring, rw = VISITED_C, "#5570cc", 2
             elif nid in self.frontier:
-                fill, ring, rw = "#2a2210", WARN,    2
+                fill, ring, rw = "#ffe066", WARN,    2
             elif nid == self.origin:
-                fill, ring, rw = "#0e2a1a", SUCCESS, 2
+                fill, ring, rw = "#4cd6a8", SUCCESS, 2
             elif nid in self.dests:
-                fill, ring, rw = "#2a0e0e", ACCENT2, 2
+                fill, ring, rw = "#ff8080", ACCENT2, 2
             else:
                 fill, ring, rw = NODE_BG,  BORDER,   1
 
@@ -496,8 +509,12 @@ class GraphCanvas(tk.Canvas):
 
             self.create_oval(cx-r, cy-r, cx+r, cy+r,
                              fill=fill, outline=ring, width=rw)
+            # use white text on vivid fills, dark on light fills
+            text_clr = "#ffffff" if nid in (self.current_node,) or \
+                       (self.solution_path and nid in self.solution_path) or \
+                       nid in self.visited else NODE_FG
             self.create_text(cx, cy, text=str(nid),
-                             fill=NODE_FG, font=("Consolas", 9, "bold"))
+                             fill=text_clr, font=("Consolas", 9, "bold"))
 
             # heuristic label above node
             if nid in self.heuristics:
@@ -545,6 +562,7 @@ class App(tk.Tk):
 
         self._map_data  = None
         self._filename  = ""
+        self._filepath  = ""
         self._running   = False
         self._stop_flag = threading.Event()
         self._step_event= threading.Event()
@@ -567,7 +585,6 @@ class App(tk.Tk):
         s.configure("TScale",
                     background=PANEL, troughcolor=BORDER,
                     sliderthickness=14)
-
     # ── UI layout ────────────────────────────────────────────────
     def _build_ui(self):
         self._build_topbar()
@@ -760,6 +777,7 @@ class App(tk.Tk):
             self._heuristics = all_heuristics(nodes, dests)
             self._map_data   = (origin, dests, nodes, adj, edges)
             self._filename   = os.path.basename(path)
+            self._filepath   = path
             self._file_label.config(text=self._filename, fg=NODE_FG)
             self._canvas.load(nodes, adj, edges, origin, dests, self._heuristics)
             self._btn_run.config(state=tk.NORMAL)
@@ -889,7 +907,7 @@ class App(tk.Tk):
         row1.pack(fill=tk.X, padx=16, pady=(10,2))
         tk.Label(row1, text="Map file:", bg=PANEL, fg=MUTED,
                  font=FONT_UI, width=9, anchor="w").pack(side=tk.LEFT)
-        cli_file_var = tk.StringVar(value=self._filename or "")
+        cli_file_var = tk.StringVar(value=self._filepath or "")
         tk.Entry(row1, textvariable=cli_file_var, bg=PANEL2, fg=NODE_FG,
                  font=FONT_MONO, relief=tk.FLAT, insertbackground=ACCENT,
                  highlightthickness=1, highlightbackground=BORDER
@@ -947,12 +965,13 @@ class App(tk.Tk):
                     lines.append("No solution found.")
                 out_box.insert(tk.END, "\n".join(lines))
                 # Also load into GUI if this file differs
-                if fp != self._filename:
+                if fp != self._filepath:
                     try:
                         h = all_heuristics(nodes, dests)
                         self._heuristics = h
                         self._map_data   = (origin, dests, nodes, adj, edges)
                         self._filename   = os.path.basename(fp)
+                        self._filepath   = fp
                         self._file_label.config(text=self._filename, fg=NODE_FG)
                         self._canvas.load(nodes, adj, edges, origin, dests, h)
                         self._btn_run.config(state=tk.NORMAL)
@@ -976,7 +995,7 @@ class App(tk.Tk):
 
         # Output box
         tk.Frame(win, bg=BORDER, height=1).pack(fill=tk.X, padx=16)
-        out_box = tk.Text(win, bg="#0a0c12", fg=SUCCESS,
+        out_box = tk.Text(win, bg="#f5f6fa", fg="#1a7a50",
                           font=("Consolas", 10), relief=tk.FLAT,
                           state=tk.DISABLED, padx=10, pady=8,
                           highlightthickness=0, wrap=tk.WORD)
