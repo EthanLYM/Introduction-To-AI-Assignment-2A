@@ -4,16 +4,47 @@ COS30019 Assignment 2A — Route Finding Search Visualiser
 Usage:
   GUI mode  : python search.py
   CLI mode  : python search.py <filename> <method>
-              methods: DFS  BFS  GBFS  AS  UCS
+              methods: DFS  BFS  GBFS  AS  CUS1  CUS2
 
-Heuristic (GBFS / AS): straight-line (Euclidean) distance to the
-nearest destination node.
+Algorithms
+----------
+  DFS   — Depth-First Search (uninformed)
+  BFS   — Breadth-First Search (uninformed)
+  GBFS  — Greedy Best-First Search (informed, heuristic only)
+  AS    — A* Search (informed, g + h)
+  CUS1  — Uniform Cost Search (uninformed, optimal-cost path)
+  CUS2  — Iterative Deepening A* / IDA* (informed, optimal path,
+           least moves to goal)
+
+Heuristic (GBFS / AS / CUS2): straight-line (Euclidean) distance
+to the nearest destination node.
 """
 
 import sys, os, math, time, threading, heapq
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
 from collections import defaultdict, deque
+
+# Tkinter is only needed for GUI mode; guard the import so that CLI
+# mode works on headless systems or when tkinter is unavailable.
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox, ttk
+    _HAS_TK = True
+except ImportError:
+    _HAS_TK = False
+    # Provide minimal stubs so class definitions below don't raise NameError.
+    # These are never instantiated in CLI mode.
+    class _Stub:
+        Canvas = object
+        Tk     = object
+        NORMAL = DISABLED = HORIZONTAL = LAST = BOTH = X = Y = LEFT = RIGHT \
+               = TOP = BOTTOM = END = WORD = FLAT = DISABLED = NORMAL \
+               = "stub"
+        def __getattr__(self, _): return "stub"
+    tk = _Stub()
+    class _TtkStub:
+        def __getattr__(self, _): return lambda *a, **k: None
+    ttk = _TtkStub()
+    filedialog = messagebox = _TtkStub()
 
 # ══════════════════════════════════════════════════════════════════
 #  PARSER
@@ -198,8 +229,11 @@ def astar(origin, destinations, nodes_coords, adj, step_callback=None):
     return None, [], 0.0, created
 
 
-# ── UCS ──────────────────────────────────────────────────────────
-def ucs(origin, destinations, adj, step_callback=None):
+# ── CUS1 — Uniform Cost Search (uninformed, optimal cost) ────────
+def cus1(origin, destinations, adj, step_callback=None):
+    """Uniform Cost Search: uninformed method that finds the
+    minimum-cost path by always expanding the cheapest frontier node.
+    Satisfies the CUS1 requirement (uninformed custom strategy)."""
     dest_set = set(destinations)
     heap     = [(0.0, 0, origin, [origin])]
     visited  = set()
@@ -229,10 +263,70 @@ def ucs(origin, destinations, adj, step_callback=None):
     return None, [], 0.0, created
 
 
+# ── CUS2 — Iterative Deepening A* (IDA*) (informed, least moves) ─
+def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
+    """IDA* (Iterative Deepening A*): informed custom strategy.
+    Performs DFS bounded by an f = g + h threshold, increasing the
+    threshold each iteration.  Finds the optimal-cost path while
+    using O(path-length) memory.  Satisfies the CUS2 requirement
+    (informed custom strategy, finds shortest / least-moves path)."""
+    dest_set = set(destinations)
+    h        = make_heuristic(nodes_coords, destinations)
+    created  = [1]          # list so inner functions can mutate it
+
+    def _dfs(node, g, threshold, path_set, path, cost):
+        """Return (next_threshold | -1_if_found, goal, result_path, result_cost)."""
+        f = g + h(node)
+        if f > threshold:
+            return f, None, [], 0.0
+
+        if node in dest_set:
+            return -1, node, path[:], g
+
+        minimum = float("inf")
+        for nb, ec in _neighbours(node, adj):
+            if nb not in path_set:          # avoid cycles within this path
+                path.append(nb)
+                path_set.add(nb)
+                created[0] += 1
+
+                if step_callback:
+                    if step_callback([], set(path_set), nb, path[:], g + ec) is False:
+                        # abort requested
+                        path.pop(); path_set.discard(nb)
+                        return -2, None, [], 0.0
+
+                t, goal, rpath, rcost = _dfs(nb, g + ec, threshold,
+                                             path_set, path, g + ec)
+                path.pop()
+                path_set.discard(nb)
+
+                if t == -1:               # solution found
+                    return -1, goal, rpath, rcost
+                if t == -2:               # abort
+                    return -2, None, [], 0.0
+                if t < minimum:
+                    minimum = t
+
+        return minimum, None, [], 0.0
+
+    threshold = h(origin)
+    while True:
+        path     = [origin]
+        path_set = {origin}
+        t, goal, rpath, rcost = _dfs(origin, 0.0, threshold, path_set, path, 0.0)
+
+        if t == -1:
+            return goal, rpath, rcost, created[0]
+        if t == -2 or t == float("inf"):
+            return None, [], 0.0, created[0]
+        threshold = t
+
+
 # ══════════════════════════════════════════════════════════════════
 #  CLI RUNNER
 # ══════════════════════════════════════════════════════════════════
-METHODS = ["DFS", "BFS", "GBFS", "AS", "UCS"]
+METHODS = ["DFS", "BFS", "GBFS", "AS", "CUS1", "CUS2"]
 
 def run_search(method, origin, destinations, nodes, adj):
     m = method.upper()
@@ -240,26 +334,50 @@ def run_search(method, origin, destinations, nodes, adj):
     elif m == "BFS":  return bfs(origin, destinations, adj)
     elif m == "GBFS": return gbfs(origin, destinations, nodes, adj)
     elif m == "AS":   return astar(origin, destinations, nodes, adj)
-    elif m == "UCS":  return ucs(origin, destinations, adj)
+    elif m == "CUS1": return cus1(origin, destinations, adj)
+    elif m == "CUS2": return cus2(origin, destinations, nodes, adj)
     else:
         print(f"Unknown method '{method}'. Choose from: {', '.join(METHODS)}")
         return None, [], 0.0, 0
 
 
+def _format_cost(cost):
+    """Return cost as an integer string if whole, otherwise as a float string."""
+    if cost == int(cost):
+        return str(int(cost))
+    return str(cost)
+
+
 def cli_mode(filepath, method):
+    # ── validate method ──────────────────────────────────────────
+    m = method.upper()
+    if m not in METHODS:
+        print(f"Error: Unknown method '{method}'.")
+        print(f"Valid methods: {', '.join(METHODS)}")
+        print("Usage: python search.py <filename> <method>")
+        sys.exit(1)
+
+    # ── parse map file ───────────────────────────────────────────
     try:
         origin, destinations, nodes, adj, edges = parse_map(filepath)
+    except FileNotFoundError:
+        print(f"Error: File '{filepath}' not found.")
+        sys.exit(1)
     except Exception as e:
-        print(f"Error reading map: {e}"); return
+        print(f"Error reading map: {e}")
+        sys.exit(1)
 
     goal, path, cost, created = run_search(method, origin, destinations, nodes, adj)
-    print(f"Starting Node   : {origin}")
-    print(f"Method          : {method.upper()}")
+
+    # ── output format required by the assignment spec ──
+    print(f"{filepath} {m}")
+    print(f"Goal State: {', '.join(map(str, destinations))}")
+    print(f"Starting Node: {origin}")
     if goal is not None:
         print(f"Destination Node: {goal}")
-        print(f"Nodes created   : {created}")
-        print(f"Path            : {' -> '.join(map(str, path))}")
-        print(f"Path Cost       : {cost:.2f}")
+        print(f"Number of nodes created: {created}")
+        print(f"Path: {' -> '.join(map(str, path))}")
+        print(f"Path Cost: {_format_cost(cost)}")
     else:
         print("No solution found.")
 
@@ -293,11 +411,13 @@ METHOD_COLORS = {
     "BFS":  "#4ecca3",
     "GBFS": "#ffd166",
     "AS":   "#ff9f43",
-    "UCS":  "#ee5a94",
+    "CUS1": "#ee5a94",
+    "CUS2": "#a78bfa",
 }
 
 PADDING   = 55
 NODE_R    = 16
+
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -843,8 +963,10 @@ class App(tk.Tk):
                     r = gbfs(origin, destinations, nodes, adj, step_cb)
                 elif m == "AS":
                     r = astar(origin, destinations, nodes, adj, step_cb)
-                elif m == "UCS":
-                    r = ucs(origin, destinations, adj, step_cb)
+                elif m == "CUS1":
+                    r = cus1(origin, destinations, adj, step_cb)
+                elif m == "CUS2":
+                    r = cus2(origin, destinations, nodes, adj, step_cb)
                 else:
                     r = (None, [], 0.0, 0)
 
@@ -1008,8 +1130,20 @@ class App(tk.Tk):
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT
 # ══════════════════════════════════════════════════════════════════
+_USAGE = (
+    "Usage: python search.py <filename> <method>\n"
+    f"       methods: {', '.join(METHODS)}"
+)
+
 if __name__ == "__main__":
     if len(sys.argv) >= 3:
         cli_mode(sys.argv[1], sys.argv[2])
+    elif len(sys.argv) == 2:
+        print(_USAGE)
+        sys.exit(1)
     else:
+        if not _HAS_TK:
+            print("tkinter is not available — cannot launch GUI.")
+            print(_USAGE)
+            sys.exit(1)
         App().mainloop()
