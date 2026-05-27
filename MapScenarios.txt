@@ -1,0 +1,19 @@
+Map1.txt - standard reachable goal (given) 
+
+Map2.txt - larger map (given) 
+
+Map3.txt - unreachable goal (given) 
+
+Map4.txt - direct path exists (custom)
+
+Map5.txt - tie-breaking (custom)
+
+Map6.txt - cyclic graph/bidirectional (custom)
+
+Map7.txt - long optimal path vs expensive shortcut (custom)
+
+Map8.txt - multiple goals/nearest vs cheapest conflict (custom)
+
+Map9.txt - partially unreachable goals
+
+Map10.txt - origin is goal (custom)
