@@ -721,10 +721,10 @@ class App(tk.Tk):
 
         # Graph canvas
         self._canvas = GraphCanvas(pane)
-        pane.add(self._canvas, minsize=500)
+        pane.add(self._canvas, minsize=999)
 
         # Right sidebar
-        sidebar = tk.Frame(pane, bg=PANEL, width=300)
+        sidebar = tk.Frame(pane, bg=PANEL, width=100)
         sidebar.pack_propagate(False)
         pane.add(sidebar, minsize=260)
         self._build_sidebar(sidebar)
