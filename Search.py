@@ -428,6 +428,11 @@ class GraphCanvas(tk.Canvas):
         super().__init__(master, bg=BG, highlightthickness=0, **kw)
         self.reset_state()
         self.bind("<Configure>", lambda e: self.redraw())
+        self._running   = False
+        self._stop_flag = threading.Event()
+        self._step_event= threading.Event()
+        self._is_stepping = False  # <--- ADD THIS LINE
+        self._delay     = 600
 
     def reset_state(self):
         self.nodes         = {}
@@ -564,40 +569,41 @@ class GraphCanvas(tk.Canvas):
         for i in range(len(self.solution_path) - 1):
             sol_set.add((self.solution_path[i], self.solution_path[i+1]))
 
-        # Find which pairs are bidirectional so we can offset them
         edge_pairs = set((n1, n2) for n1, n2, _ in self.edges_raw)
-        drawn = set()
+        processed_pairs = set()
 
         for n1, n2, cost in self.edges_raw:
-            if n1 not in self.nodes or n2 not in self.nodes: continue
+            if n1 not in self.nodes or n2 not in self.nodes: 
+                continue
+            
+            # Create a unique key regardless of direction order
+            pair = tuple(sorted([n1, n2]))
+            if pair in processed_pairs:
+                continue
+            processed_pairs.add(pair)
+
             x1, y1 = self.to_canvas(*self.nodes[n1])
             x2, y2 = self.to_canvas(*self.nodes[n2])
 
-            in_sol = (n1, n2) in sol_set
+            # If either direction belongs to the solution path, highlight it
+            in_sol = (n1, n2) in sol_set or (n2, n1) in sol_set
             clr    = SUCCESS if in_sol else BORDER
             w      = 3 if in_sol else 1.5
 
-            # Only offset if the reverse direction also exists (bidirectional)
-            is_bidir = (n2, n1) in edge_pairs
-            dx, dy = x2-x1, y2-y1
-            length = math.hypot(dx, dy) or 1
-            if is_bidir:
-                px, py = -dy/length * 4, dx/length * 4
-            else:
-                px, py = 0, 0
+            # Determine arrow type: bidirectional vs single direction
+            is_bidir = (n2, n1) in edge_pairs and (n1, n2) in edge_pairs
+            arrow_setting = tk.BOTH if is_bidir else tk.LAST
 
-            self.create_line(x1+px, y1+py, x2+px, y2+py,
+            # Draw a clean, single line between the nodes
+            self.create_line(x1, y1, x2, y2,
                              fill=clr, width=w,
-                             arrow=tk.LAST, arrowshape=(10, 12, 4),
+                             arrow=arrow_setting, arrowshape=(10, 12, 4),
                              smooth=False)
 
-            # Only draw cost label once per pair
-            pair = tuple(sorted([n1, n2]))
-            if pair not in drawn:
-                mx, my = (x1+x2)/2 + px, (y1+y2)/2 + py - 9
-                self.create_text(mx, my, text=f"{cost:.0f}",
-                                 fill=MUTED, font=FONT_TINY)
-                drawn.add(pair)
+            # Draw cost label right in the middle
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2 - 9
+            self.create_text(mx, my, text=f"{cost:.0f}",
+                             fill=MUTED, font=FONT_TINY)
 
     # ── nodes ─────────────────────────────────────────────────────
     def _draw_nodes(self):
@@ -780,11 +786,6 @@ class App(tk.Tk):
         tk.Label(bar, text="slow", bg=PANEL, fg=MUTED,
                  font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2,8))
 
-        # CLI runner on right
-        tk.Frame(bar, bg=BORDER, width=1).pack(side=tk.RIGHT, fill=tk.Y, pady=6, padx=4)
-        self._btn(bar, "⌨  CLI Runner", self._open_cli_window,
-                  "#a78bfa").pack(side=tk.RIGHT, padx=6)
-
         # Bottom divider
         tk.Frame(self, bg=BORDER, height=1).pack(fill=tk.X)
 
@@ -912,28 +913,50 @@ class App(tk.Tk):
     # ── reset ────────────────────────────────────────────────────
     def _reset(self):
         self._running = False
+        self._is_stepping = False
         self._stop_flag.set()
+        self._step_event.set() # Unblock any sleeping loops so they can exit
+        
         if self._map_data:
             o, d, nodes, adj, edges = self._map_data
             self._canvas.load(nodes, adj, edges, o, d, self._heuristics)
-            self._set_text(self._status_box, "Reset. Press ▶ Run.")
+            self._set_text(self._status_box, "Reset. Press ▶ Run or ⏭ Step.")
             self._set_text(self._result_box, "—")
             self._frontier_box.delete(0, tk.END)
+            
+        # Re-enable both interaction buttons on reset
         self._btn_run.config(state=tk.NORMAL if self._map_data else tk.DISABLED)
+        self._btn_step.config(state=tk.NORMAL if self._map_data else tk.DISABLED)
 
     # ── step ─────────────────────────────────────────────────────
     def _step(self):
+        # If a search hasn't even started yet, click "Step" will initialize it in step-mode
+        if not self._running:
+            self._run_search(start_in_step_mode=True)
+            return
+            
+        # If it is running, force step mode active and advance the frame
+        self._is_stepping = True
         self._step_event.set()
 
     # ── run search ───────────────────────────────────────────────
-    def _run_search(self):
-        if not self._map_data or self._running:
+    def _run_search(self, start_in_step_mode=False):
+        # If already executing, clicking "Run" transitions from manual step to automatic run
+        if self._running:
+            if self._is_stepping:
+                self._is_stepping = False
+                self._step_event.set() # Wake up the loop
             return
-        self._reset()
+
+        # Initialize fresh run states
         self._running   = True
+        self._is_stepping = start_in_step_mode
         self._stop_flag = threading.Event()
         self._step_event= threading.Event()
-        self._btn_run.config(state=tk.DISABLED)
+        
+        # CRITICAL: Keep buttons NORMAL so you can click them mid-search to switch modes!
+        self._btn_run.config(state=tk.NORMAL)
+        self._btn_step.config(state=tk.NORMAL)
 
         origin, destinations, nodes, adj, edges = self._map_data
         method  = self._method_var.get()
@@ -942,33 +965,36 @@ class App(tk.Tk):
         def step_cb(frontier, visited, current, path, cost):
             if self._stop_flag.is_set():
                 return False
-            self._step_event.clear()
+                
+            # Update GUI elements immediately
             self.after(0, self._canvas.update_state, visited, frontier, current)
             self.after(0, self._update_status, visited, frontier, current, cost)
-            deadline = time.time() + self._delay / 1000.0
-            while time.time() < deadline:
-                if self._step_event.is_set() or self._stop_flag.is_set():
-                    break
-                time.sleep(0.02)
-            return True
+            
+            if self._is_stepping:
+                # Clear the event flag so it blocks until the NEXT click
+                self._step_event.clear()
+                while self._is_stepping and not self._step_event.is_set() and not self._stop_flag.is_set():
+                    time.sleep(0.01)
+            else:
+                # Regular automatic running mode with delay
+                deadline = time.time() + self._delay / 1000.0
+                while time.time() < deadline:
+                    if self._is_stepping or self._stop_flag.is_set():
+                        break
+                    time.sleep(0.01)
+                    
+            return not self._stop_flag.is_set()
 
         def run():
             try:
                 m = method.upper()
-                if   m == "DFS":
-                    r = dfs(origin, destinations, adj, step_cb)
-                elif m == "BFS":
-                    r = bfs(origin, destinations, adj, step_cb)
-                elif m == "GBFS":
-                    r = gbfs(origin, destinations, nodes, adj, step_cb)
-                elif m == "AS":
-                    r = astar(origin, destinations, nodes, adj, step_cb)
-                elif m == "CUS1":
-                    r = cus1(origin, destinations, adj, step_cb)
-                elif m == "CUS2":
-                    r = cus2(origin, destinations, nodes, adj, step_cb)
-                else:
-                    r = (None, [], 0.0, 0)
+                if   m == "DFS":  r = dfs(origin, destinations, adj, step_cb)
+                elif m == "BFS":  r = bfs(origin, destinations, adj, step_cb)
+                elif m == "GBFS": r = gbfs(origin, destinations, nodes, adj, step_cb)
+                elif m == "AS":   r = astar(origin, destinations, nodes, adj, step_cb)
+                elif m == "CUS1": r = cus1(origin, destinations, adj, step_cb)
+                elif m == "CUS2": r = cus2(origin, destinations, nodes, adj, step_cb)
+                else:             r = (None, [], 0.0, 0)
 
                 if not self._stop_flag.is_set():
                     results["goal"], results["path"], \
@@ -985,7 +1011,10 @@ class App(tk.Tk):
 
     def _on_done(self, results):
         self._running = False
+        self._is_stepping = False
         self._btn_run.config(state=tk.NORMAL)
+        self._btn_step.config(state=tk.NORMAL)
+        
         goal    = results.get("goal")
         path    = results.get("path", [])
         cost    = results.get("cost", 0)
@@ -993,8 +1022,7 @@ class App(tk.Tk):
         method  = self._method_var.get()
 
         if goal is not None:
-            self._canvas.update_state(
-                self._canvas.visited, [], None, path)
+            self._canvas.update_state(self._canvas.visited, [], None, path)
             route = " → ".join(map(str, path))
             self._set_text(self._result_box,
                 f"✓ Goal reached: {goal}\n"
@@ -1003,129 +1031,12 @@ class App(tk.Tk):
                 f"Path cost    : {cost:.2f}\n\n"
                 f"Path:\n{route}"
             )
-            self._set_text(self._status_box,
-                f"Search complete!\nGoal: {goal}  Cost: {cost:.2f}")
+            self._set_text(self._status_box, f"Search complete!\nGoal: {goal}  Cost: {cost:.2f}")
         else:
             self._set_text(self._result_box,
                 "✗ No solution found." if not results.get("error")
                 else f"Error: {results['error']}")
             self._set_text(self._status_box, "Search complete.\nNo solution found.")
-
-    # ── CLI runner window ─────────────────────────────────────────
-    def _open_cli_window(self):
-        win = tk.Toplevel(self)
-        win.title("CLI Runner")
-        win.configure(bg=PANEL)
-        win.geometry("680x480")
-        win.resizable(True, True)
-
-        # Title
-        tk.Label(win, text="CLI Runner", bg=PANEL, fg=ACCENT,
-                 font=("Segoe UI", 12, "bold")).pack(pady=(14,4), padx=16, anchor="w")
-        tk.Frame(win, bg=BORDER, height=1).pack(fill=tk.X, padx=16)
-
-        # File row
-        row1 = tk.Frame(win, bg=PANEL)
-        row1.pack(fill=tk.X, padx=16, pady=(10,2))
-        tk.Label(row1, text="Map file:", bg=PANEL, fg=MUTED,
-                 font=FONT_UI, width=9, anchor="w").pack(side=tk.LEFT)
-        cli_file_var = tk.StringVar(value=self._filepath or "")
-        tk.Entry(row1, textvariable=cli_file_var, bg=PANEL2, fg=NODE_FG,
-                 font=FONT_MONO, relief=tk.FLAT, insertbackground=ACCENT,
-                 highlightthickness=1, highlightbackground=BORDER
-                 ).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4,4))
-
-        def browse():
-            p = filedialog.askopenfilename(
-                title="Select Map",
-                filetypes=[("Text","*.txt"),("All","*.*")])
-            if p: cli_file_var.set(p)
-        tk.Button(row1, text="Browse", command=browse,
-                  bg=PANEL2, fg=ACCENT, relief=tk.FLAT,
-                  font=FONT_UI, padx=8).pack(side=tk.LEFT)
-
-        # Method row
-        row2 = tk.Frame(win, bg=PANEL)
-        row2.pack(fill=tk.X, padx=16, pady=4)
-        tk.Label(row2, text="Method:", bg=PANEL, fg=MUTED,
-                 font=FONT_UI, width=9, anchor="w").pack(side=tk.LEFT)
-        cli_method_var = tk.StringVar(value=self._method_var.get())
-        for m in METHODS:
-            rb = tk.Radiobutton(row2, text=m, variable=cli_method_var,
-                                value=m, bg=PANEL, fg=METHOD_COLORS.get(m, ACCENT),
-                                selectcolor=PANEL2, activebackground=PANEL,
-                                font=("Consolas", 10, "bold"),
-                                relief=tk.FLAT)
-            rb.pack(side=tk.LEFT, padx=6)
-
-        # Run button
-        def do_run():
-            fp = cli_file_var.get().strip()
-            m  = cli_method_var.get()
-            if not fp:
-                messagebox.showwarning("Missing file", "Please enter a map file path.",
-                                       parent=win)
-                return
-            out_box.config(state=tk.NORMAL)
-            out_box.delete("1.0", tk.END)
-            out_box.insert(tk.END, f"$ python search.py \"{fp}\" {m}\n\n")
-            try:
-                origin, dests, nodes, adj, edges = parse_map(fp)
-                goal, path, cost, created = run_search(m, origin, dests, nodes, adj)
-                lines = [
-                    f"Starting Node   : {origin}",
-                    f"Method          : {m}",
-                ]
-                if goal is not None:
-                    lines += [
-                        f"Destination Node: {goal}",
-                        f"Nodes created   : {created}",
-                        f"Path            : {' -> '.join(map(str, path))}",
-                        f"Path Cost       : {cost:.2f}",
-                    ]
-                else:
-                    lines.append("No solution found.")
-                out_box.insert(tk.END, "\n".join(lines))
-                # Also load into GUI if this file differs
-                if fp != self._filepath:
-                    try:
-                        h = all_heuristics(nodes, dests)
-                        self._heuristics = h
-                        self._map_data   = (origin, dests, nodes, adj, edges)
-                        self._filename   = os.path.basename(fp)
-                        self._filepath   = fp
-                        self._file_label.config(text=self._filename, fg=NODE_FG)
-                        self._canvas.load(nodes, adj, edges, origin, dests, h)
-                        self._btn_run.config(state=tk.NORMAL)
-                        self._btn_step.config(state=tk.NORMAL)
-                        self._update_info()
-                        self._update_h_box(h)
-                        self._method_var.set(m)
-                    except Exception:
-                        pass
-            except Exception as e:
-                out_box.insert(tk.END, f"Error: {e}")
-            out_box.config(state=tk.DISABLED)
-
-        btn_row = tk.Frame(win, bg=PANEL)
-        btn_row.pack(fill=tk.X, padx=16, pady=6)
-        tk.Button(btn_row, text="▶  Execute", command=do_run,
-                  bg=PANEL2, fg=SUCCESS, relief=tk.FLAT,
-                  font=("Segoe UI", 10, "bold"),
-                  padx=14, pady=6, cursor="hand2"
-                  ).pack(side=tk.LEFT)
-
-        # Output box
-        tk.Frame(win, bg=BORDER, height=1).pack(fill=tk.X, padx=16)
-        out_box = tk.Text(win, bg="#f5f6fa", fg="#1a7a50",
-                          font=("Consolas", 10), relief=tk.FLAT,
-                          state=tk.DISABLED, padx=10, pady=8,
-                          highlightthickness=0, wrap=tk.WORD)
-        out_box.pack(fill=tk.BOTH, expand=True, padx=16, pady=10)
-        out_box.config(state=tk.NORMAL)
-        out_box.insert(tk.END, "Select a file and method, then click ▶ Execute.\n")
-        out_box.config(state=tk.DISABLED)
-
 
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT
