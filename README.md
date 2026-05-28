@@ -20,3 +20,15 @@ Usage:
 
 Heuristic (GBFS / AS / CUS2): straight-line (Euclidean) distance
 to the nearest destination node.
+
+# CLI Output
+----------
+    CLI output is as follows: 
+    
+        <map_file> <search_method> 
+        Goal State(s): <goal(s)> 
+        Starting Node: <starting_node> 
+        Destination Node: <destination_node>  
+        Number of Nodes Created: <number_of_nodes>  
+        Path: <path>  
+        Path Cost: <path_cost> 
