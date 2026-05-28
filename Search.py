@@ -35,7 +35,7 @@ except Exception:
         pass # Fallback for non-Windows platforms
 
 # ══════════════════════════════════════════════════════════════════
-#  PARSER
+#  PARSER 
 # ══════════════════════════════════════════════════════════════════
 def parse_map(filepath):
     with open(filepath) as f:
@@ -260,7 +260,7 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
     (informed custom strategy, finds shortest / least-moves path)."""
     dest_set = set(destinations)
     h        = make_heuristic(nodes_coords, destinations)
-    created  = [1]          # list so inner functions can mutate it
+    created  = [1]
 
     def _dfs(node, g, threshold, path_set, path, cost):
         """Return (next_threshold | -1_if_found, goal, result_path, result_cost)."""
@@ -273,7 +273,7 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
 
         minimum = float("inf")
         for nb, ec in _neighbours(node, adj):
-            if nb not in path_set:          # avoid cycles within this path
+            if nb not in path_set:
                 path.append(nb)
                 path_set.add(nb)
                 created[0] += 1
@@ -289,9 +289,9 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
                 path.pop()
                 path_set.discard(nb)
 
-                if t == -1:               # solution found
+                if t == -1:
                     return -1, goal, rpath, rcost
-                if t == -2:               # abort
+                if t == -2:
                     return -2, None, [], 0.0
                 if t < minimum:
                     minimum = t
@@ -312,7 +312,7 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  CLI RUNNER
+#  CLI RUNNER 
 # ══════════════════════════════════════════════════════════════════
 METHODS = ["DFS", "BFS", "GBFS", "AS", "CUS1", "CUS2"]
 
@@ -358,8 +358,6 @@ def cli_mode(filepath, method):
     goal, path, cost, created = run_search(method, origin, destinations, nodes, adj)
 
     # ── output format required by the assignment spec ──
-    print(f"{filepath} {m}")
-    print(f"Goal State(s): {', '.join(map(str, destinations))}")
     print(f"Starting Node: {origin}")
     if goal is not None:
         print(f"Destination Node: {goal}")
@@ -371,56 +369,71 @@ def cli_mode(filepath, method):
 
 
 # ══════════════════════════════════════════════════════════════════
-#  THEME / CONSTANTS
+#  UI COLORS & THEME CONSTANTS 
 # ══════════════════════════════════════════════════════════════════
-BG        = "#f5f6fa"
-PANEL     = "#ffffff"
-PANEL2    = "#eef0f7"
-BORDER    = "#c8cce0"
-ACCENT    = "#3a5fd9"       # blue
-ACCENT2   = "#e03c3c"       # red/orange  — current node
-SUCCESS   = "#1a9e72"       # teal        — solution
-WARN      = "#c08800"       # yellow      — frontier
-VISITED_C = "#8fa3e8"       # medium blue-purple — visited
-NODE_BG   = "#c8cfe8"
-NODE_FG   = "#1a1d2e"
-MUTED     = "#7a82aa"
-GRID_MAIN = "#dce0ee"       # graph-paper major lines
-GRID_MINOR= "#eaedf6"       # graph-paper minor lines
-AXIS_CLR  = "#b0b8d8"
+# Default global fallbacks representing Dark Mode
+BG        = "#0B0F19"      
+PANEL     = "#161B26"       
+PANEL2    = "#1F2633"       
+BORDER    = "#2F374A"       
+NODE_FG   = "#F0F4F8"       
+MUTED     = "#6B7A99"       
+
+# Color indicators 
+ACCENT    = "#00E5FF"       # Start/Origin highlights (Cyan)
+ACCENT2   = "#FF2A85"       # Active/Current Node (Magenta)
+SUCCESS   = "#00E676"       # Solution Path color (Green)
+WARN      = "#FFD600"       # Frontier list (Yellow)
+VISITED_C = "#7C4DFF"       # Visited Node color (Purple)
+GOAL_CLR  = "#FF8F00"       # Destination Node color (Orange)
+
+METHOD_COLORS = {
+    "DFS":  "#00E5FF",
+    "BFS":  "#00E676",
+    "GBFS": "#FFD600",
+    "AS":   "#FF2A85",
+    "CUS1": "#7C4DFF",
+    "CUS2": "#FF8F00",
+}
+
+PADDING   = 60
+NODE_R    = 18
 
 FONT_HEAD = ("Segoe UI", 11, "bold")
 FONT_UI   = ("Segoe UI", 10)
-FONT_MONO = ("Consolas", 9)
+FONT_MONO = ("Consolas", 10)
 FONT_TINY = ("Consolas", 8)
-
-METHOD_COLORS = {
-    "DFS":  "#6c8eff",
-    "BFS":  "#4ecca3",
-    "GBFS": "#ffd166",
-    "AS":   "#ff9f43",
-    "CUS1": "#ee5a94",
-    "CUS2": "#a78bfa",
-}
-
-PADDING   = 55
-NODE_R    = 16
-
 
 
 # ══════════════════════════════════════════════════════════════════
-#  GRAPH CANVAS  (graph-paper style)
+#  VECTOR BLUEPRINT GRAPH CANVAS (Supports Drag to Pan and Zoom)
 # ══════════════════════════════════════════════════════════════════
 class GraphCanvas(tk.Canvas):
     def __init__(self, master, **kw):
         super().__init__(master, bg=BG, highlightthickness=0, **kw)
+        self.dark_mode = True
         self.reset_state()
+        
+        # Interactive Zoom & Pan Parameters
+        self.zoom_factor = 1.0
+        self.pan_x = 0
+        self.pan_y = 0
+        self.hovered_node = None
+        
         self.bind("<Configure>", lambda e: self.redraw())
-        self._running   = False
-        self._stop_flag = threading.Event()
-        self._step_event= threading.Event()
-        self._is_stepping = False  # <--- ADD THIS LINE
-        self._delay     = 600
+        
+        # Drag to Pan (Bind to Left, Middle, and Right Clicks)
+        self.bind("<ButtonPress-1>", self._start_pan)
+        self.bind("<B1-Motion>", self._pan)
+        self.bind("<ButtonPress-2>", self._start_pan)
+        self.bind("<B2-Motion>", self._pan)
+        self.bind("<ButtonPress-3>", self._start_pan)
+        self.bind("<B3-Motion>", self._pan)
+        
+        self.bind("<MouseWheel>", self._zoom)          # Scroll Wheel Zoom
+        self.bind("<Motion>", self._on_mouse_move)    # Hover Detector
+        
+        self.hover_callback = None
 
     def reset_state(self):
         self.nodes         = {}
@@ -432,10 +445,13 @@ class GraphCanvas(tk.Canvas):
         self.frontier      = set()
         self.solution_path = []
         self.current_node  = None
-        self.heuristics    = {}   # node -> float
+        self.heuristics    = {}
         self._min_x = self._min_y = 0
         self._scale_x = self._scale_y = 1
         self._canvas_h = 500
+        self.zoom_factor = 1.0
+        self.pan_x = 0
+        self.pan_y = 0
 
     def load(self, nodes, adj, edges_raw, origin, dests, heuristics):
         self.reset_state()
@@ -456,13 +472,54 @@ class GraphCanvas(tk.Canvas):
             self.solution_path = solution_path
         self.redraw()
 
-    # ── coordinate transform ─────────────────────────────────────
+    # ── Pan & Drag ────────────────────────────────────────────────
+    def _start_pan(self, event):
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+
+    def _pan(self, event):
+        dx = event.x - self._drag_start_x
+        dy = event.y - self._drag_start_y
+        self.pan_x += dx
+        self.pan_y += dy
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+        self.redraw()
+
+    # ── Zoom ──────────────────────────────────────────────────────
+    def _zoom(self, event):
+        factor = 1.1 if event.delta > 0 else 0.9
+        self.zoom_factor = max(0.3, min(self.zoom_factor * factor, 8.0))
+        self.redraw()
+
+    # ── Hover Detector ────────────────────────────────────────────
+    def _on_mouse_move(self, event):
+        if not self.nodes: return
+        found_node = None
+        for nid, (nx, ny) in self.nodes.items():
+            cx, cy = self.to_canvas(nx, ny)
+            dist = math.hypot(event.x - cx, event.y - cy)
+            if dist < NODE_R + 6:
+                found_node = nid
+                break
+        
+        if found_node is not None:
+            self.config(cursor="hand2")
+        else:
+            self.config(cursor="fleur")
+
+        if found_node != self.hovered_node:
+            self.hovered_node = found_node
+            self.redraw()
+            if self.hover_callback:
+                self.hover_callback(found_node)
+
     def _compute_transform(self):
         if not self.nodes: return
         xs = [v[0] for v in self.nodes.values()]
         ys = [v[1] for v in self.nodes.values()]
-        mn_x, mx_x = 0, max(xs)   # always start from 0
-        mn_y, mx_y = 0, max(ys)   # always start from 0
+        mn_x, mx_x = 0, max(xs)
+        mn_y, mx_y = 0, max(ys)
         w = max(self.winfo_width(),  400)
         h = max(self.winfo_height(), 300)
         sx = (w - 2*PADDING) / max(mx_x - mn_x, 1)
@@ -473,7 +530,6 @@ class GraphCanvas(tk.Canvas):
         self._min_y    = mn_y
         self._canvas_h = h
         self._canvas_w = w
-        # graph coordinate range for grid
         self._gx_min = mn_x
         self._gx_max = mx_x
         self._gy_min = mn_y
@@ -482,22 +538,33 @@ class GraphCanvas(tk.Canvas):
     def to_canvas(self, x, y):
         cx = (x - self._min_x) * self._scale_x + PADDING
         cy = self._canvas_h - ((y - self._min_y) * self._scale_y + PADDING)
+        
+        center_x = self._canvas_w / 2
+        center_y = self._canvas_h / 2
+        cx = center_x + (cx - center_x) * self.zoom_factor + self.pan_x
+        cy = center_y + (cy - center_y) * self.zoom_factor + self.pan_y
         return cx, cy
 
-    # ── full redraw ───────────────────────────────────────────────
     def redraw(self, *_):
         self._compute_transform()
         self.delete("all")
         if not self.nodes: return
-        self._draw_grid()
-        self._draw_axes()
-        self._draw_edges()
-        self._draw_nodes()
+        
+        # Color palettes configured depending on Theme state
+        self.bg_color         = "#0B0F19" if self.dark_mode else "#ffffff"
+        self.grid_main_color  = "#121926" if self.dark_mode else "#e5e7eb"
+        self.grid_minor_color = "#0F1420" if self.dark_mode else "#f3f4f6"
+        self.text_color       = "#F0F4F8" if self.dark_mode else "#1a1d2e"
+        self.muted_color      = "#6B7A99" if self.dark_mode else "#7a82aa"
+        self.border_color     = "#2F374A" if self.dark_mode else "#c8cce0"
+        self.node_bg_color    = "#2C3448" if self.dark_mode else "#c8cfe8"
 
-    # ── graph-paper grid ─────────────────────────────────────────
-    def _draw_grid(self):
+        self._draw_radar_grid()
+        self._draw_interactive_edges()
+        self._draw_interactive_nodes()
+
+    def _draw_radar_grid(self):
         w, h = self._canvas_w, self._canvas_h
-        # Work out a nice grid step in graph units
         span_x = max(self._gx_max - self._gx_min, 1)
         span_y = max(self._gy_max - self._gy_min, 1)
 
@@ -511,48 +578,34 @@ class GraphCanvas(tk.Canvas):
 
         step = nice_step(min(span_x, span_y))
 
-        # minor lines (step / 5)
         minor = step / 5
         x = math.floor(self._gx_min / minor) * minor
         while x <= self._gx_max + minor:
             cx, _ = self.to_canvas(x, 0)
-            self.create_line(cx, 0, cx, h, fill=GRID_MINOR, width=1)
+            self.create_line(cx, 0, cx, h, fill=self.grid_minor_color, width=1)
             x += minor
         y = math.floor(self._gy_min / minor) * minor
         while y <= self._gy_max + minor:
             _, cy = self.to_canvas(0, y)
-            self.create_line(0, cy, w, cy, fill=GRID_MINOR, width=1)
+            self.create_line(0, cy, w, cy, fill=self.grid_minor_color, width=1)
             y += minor
 
-        # major lines
         x = math.floor(self._gx_min / step) * step
         while x <= self._gx_max + step:
             cx, _ = self.to_canvas(x, 0)
-            self.create_line(cx, 0, cx, h, fill=GRID_MAIN, width=1)
-            self.create_text(cx, h - 12, text=f"{x:.0f}",
-                             fill=MUTED, font=FONT_TINY, anchor="s")
+            self.create_line(cx, 0, cx, h, fill=self.grid_main_color, width=1)
+            self.create_text(cx, h - 14, text=f"{x:.0f}",
+                             fill=self.muted_color, font=FONT_TINY, anchor="s")
             x += step
         y = math.floor(self._gy_min / step) * step
         while y <= self._gy_max + step:
             _, cy = self.to_canvas(0, y)
-            self.create_line(0, cy, w, cy, fill=GRID_MAIN, width=1)
-            self.create_text(14, cy, text=f"{y:.0f}",
-                             fill=MUTED, font=FONT_TINY, anchor="w")
+            self.create_line(0, cy, w, cy, fill=self.grid_main_color, width=1)
+            self.create_text(16, cy, text=f"{y:.0f}",
+                             fill=self.muted_color, font=FONT_TINY, anchor="w")
             y += step
 
-    def _draw_axes(self):
-        w, h = self._canvas_w, self._canvas_h
-        # x-axis along bottom of graph area
-        _, ay = self.to_canvas(0, self._gy_min)
-        ax, _  = self.to_canvas(self._gx_min, 0)
-        self.create_line(PADDING-10, ay, w-10, ay, fill=AXIS_CLR, width=2)
-        self.create_line(ax, h-PADDING+10, ax, 10, fill=AXIS_CLR, width=2)
-        # labels
-        self.create_text(w-6, ay, text="x", fill=MUTED, font=FONT_UI, anchor="e")
-        self.create_text(ax, 6,  text="y", fill=MUTED, font=FONT_UI, anchor="n")
-
-    # ── edges ─────────────────────────────────────────────────────
-    def _draw_edges(self):
+    def _draw_interactive_edges(self):
         sol_set = set()
         for i in range(len(self.solution_path) - 1):
             sol_set.add((self.solution_path[i], self.solution_path[i+1]))
@@ -564,7 +617,6 @@ class GraphCanvas(tk.Canvas):
             if n1 not in self.nodes or n2 not in self.nodes: 
                 continue
             
-            # Create a unique key regardless of direction order
             pair = tuple(sorted([n1, n2]))
             if pair in processed_pairs:
                 continue
@@ -573,94 +625,111 @@ class GraphCanvas(tk.Canvas):
             x1, y1 = self.to_canvas(*self.nodes[n1])
             x2, y2 = self.to_canvas(*self.nodes[n2])
 
-            # If either direction belongs to the solution path, highlight it
             in_sol = (n1, n2) in sol_set or (n2, n1) in sol_set
-            clr    = SUCCESS if in_sol else BORDER
-            w      = 3 if in_sol else 1.5
+            
+            # Checks if any valid outgoing directed traversable connection exists between the nodes
+            is_hover_related = (
+                (self.hovered_node == n1 and (n1, n2) in edge_pairs) or
+                (self.hovered_node == n2 and (n2, n1) in edge_pairs)
+            )
+            
+            if in_sol:
+                clr, shadow_clr, w = SUCCESS, "#00331A" if self.dark_mode else "#D1FAE5", 4
+            elif is_hover_related:
+                clr, shadow_clr, w = ACCENT, "#002B30" if self.dark_mode else "#E0F7FA", 3
+            else:
+                clr, shadow_clr, w = self.border_color, self.grid_minor_color, 1.5
 
-            # Determine arrow type: bidirectional vs single direction
             is_bidir = (n2, n1) in edge_pairs and (n1, n2) in edge_pairs
             arrow_setting = tk.BOTH if is_bidir else tk.LAST
 
-            # Draw a clean, single line between the nodes
+            if in_sol or is_hover_related:
+                self.create_line(x1, y1, x2, y2,
+                                 fill=shadow_clr, width=w+6,
+                                 arrow=arrow_setting, arrowshape=(12, 14, 5))
+
             self.create_line(x1, y1, x2, y2,
                              fill=clr, width=w,
-                             arrow=arrow_setting, arrowshape=(10, 12, 4),
-                             smooth=False)
+                             arrow=arrow_setting, arrowshape=(10, 12, 4))
 
-            # Draw cost label right in the middle
-            mx, my = (x1 + x2) / 2, (y1 + y2) / 2 - 9
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2 - 8
             self.create_text(mx, my, text=f"{cost:.0f}",
-                             fill=MUTED, font=FONT_TINY)
+                             fill=ACCENT if is_hover_related else self.muted_color, 
+                             font=FONT_TINY)
 
-    # ── nodes ─────────────────────────────────────────────────────
-    def _draw_nodes(self):
+    def _draw_interactive_nodes(self):
         for nid, (nx, ny) in self.nodes.items():
             cx, cy = self.to_canvas(nx, ny)
-            r = NODE_R
+            r = NODE_R * (1.15 if nid == self.hovered_node else 1.0)
 
-            # pick colours
+            # Color assign keys 
             if nid == self.current_node:
-                fill, ring, rw = ACCENT2, "#ffffff", 3
+                fill, ring, rw = ACCENT2, "#FFFFFF", 3
             elif self.solution_path and nid in self.solution_path:
-                fill, ring, rw = SUCCESS,  "#ffffff", 2
+                fill, ring, rw = SUCCESS,  "#FFFFFF", 2
             elif nid in self.visited:
-                fill, ring, rw = VISITED_C, "#5570cc", 2
+                fill, ring, rw = VISITED_C, "#7C4DFF", 2
             elif nid in self.frontier:
-                fill, ring, rw = "#ffe066", WARN,    2
+                fill, ring, rw = "#FFE066", WARN,    2
             elif nid == self.origin:
-                fill, ring, rw = "#4cd6a8", SUCCESS, 2
+                fill, ring, rw = "#00E5FF", ACCENT, 2
             elif nid in self.dests:
-                fill, ring, rw = "#ff8080", ACCENT2, 2
+                fill, ring, rw = GOAL_CLR, "#FF6F00", 2
             else:
-                fill, ring, rw = NODE_BG,  BORDER,   1
+                fill, ring, rw = self.node_bg_color, self.border_color, 1.5
 
-            # glow for current
-            if nid == self.current_node:
-                self.create_oval(cx-r-5, cy-r-5, cx+r+5, cy+r+5,
-                                 fill="", outline=ACCENT2, width=1,
-                                 stipple="gray25")
+            if nid == self.current_node or nid == self.hovered_node:
+                self.create_oval(cx-r-6, cy-r-6, cx+r+6, cy+r+6,
+                                 fill="", outline=ACCENT if nid == self.hovered_node else ACCENT2, 
+                                 width=1.5)
 
-            self.create_oval(cx-r, cy-r, cx+r, cy+r,
-                             fill=fill, outline=ring, width=rw)
-            # use white text on vivid fills, dark on light fills
-            text_clr = "#ffffff" if nid in (self.current_node,) or \
-                       (self.solution_path and nid in self.solution_path) or \
-                       nid in self.visited else NODE_FG
+            self.create_oval(cx-r, cy-r, cx+r, cy+r, fill=fill, outline=ring, width=rw)
+            
+            text_clr = "#0B0F19" if nid in (self.current_node, self.origin) or \
+                       (self.solution_path and nid in self.solution_path) else self.text_color
+                       
             self.create_text(cx, cy, text=str(nid),
-                             fill=text_clr, font=("Consolas", 9, "bold"))
+                             fill=text_clr, font=("Consolas", 10, "bold"))
 
-            # heuristic label above node
             if nid in self.heuristics:
                 hv = self.heuristics[nid]
-                self.create_text(cx, cy - r - 7,
+                self.create_text(cx, cy - r - 9,
                                  text=f"h={hv:.1f}",
-                                 fill=WARN, font=FONT_TINY)
+                                 fill=WARN if self.dark_mode else "#B8860B", font=FONT_TINY)
 
-            # special badges
-            if nid == self.origin:
-                self.create_text(cx + r + 2, cy - r,
-                                 text="S", fill=SUCCESS, font=FONT_TINY)
-            if nid in self.dests:
-                self.create_text(cx + r + 2, cy - r,
-                                 text="G", fill=ACCENT2, font=FONT_TINY)
+        self._draw_legend_panel()
 
-        self._draw_legend()
-
-    def _draw_legend(self):
+    def _draw_legend_panel(self):
         items = [
-            (ACCENT2,  "Current"),
-            (SUCCESS,  "Solution"),
-            (VISITED_C,"Visited"),
-            (WARN,     "Frontier"),
+            ("#00E5FF", "Origin"),
+            (GOAL_CLR,  "Destination"),
+            (ACCENT2,   "Current Node"),
+            (SUCCESS,   "Solution Path"),
+            (VISITED_C, "Visited Node"),
+            (WARN,      "Frontier"),
         ]
-        x0, y0 = 8, 8
+        x0, y0 = 12, 12
         for clr, lbl in items:
-            self.create_rectangle(x0, y0, x0+11, y0+11,
-                                  fill=clr, outline="")
-            self.create_text(x0+15, y0+5, text=lbl,
-                             fill=MUTED, font=FONT_TINY, anchor="w")
-            y0 += 17
+            self.create_rectangle(x0, y0, x0+12, y0+12, fill=clr, outline="")
+            self.create_text(x0+18, y0+6, text=lbl,
+                             fill=self.text_color, font=FONT_TINY, anchor="w")
+            y0 += 18
+
+
+# ══════════════════════════════════════════════════════════════════
+#  HOVER REACTIVE SYSTEM BUTTONS
+# ══════════════════════════════════════════════════════════════════
+class InteractiveButton(tk.Button):
+    def __init__(self, master, text, command, color, **kwargs):
+        super().__init__(master, text=text, command=command,
+                         bg="#1A2130", fg=color,
+                         activebackground=color, activeforeground="#0B0F19",
+                         font=("Segoe UI", 9, "bold"), bd=0, relief="flat",
+                         highlightthickness=1, highlightbackground=color,
+                         padx=12, pady=6, cursor="hand2", **kwargs)
+        self.color = color
+        self.bind("<Enter>", lambda e: self.config(bg=color, fg="#0B0F19"))
+        self.bind("<Leave>", lambda e: self.config(bg="#1A2130" if self.master.cget("bg") == "#161B26" else "#eef0f7", fg=color))
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -669,10 +738,10 @@ class GraphCanvas(tk.Canvas):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("COS30019 — Route Finding Visualiser")
-        self.configure(bg=BG)
-        self.geometry("1920x1080")
-        self.minsize(900, 600)
+        self.title("COS30019 — Route Finding Visualizer")
+        self.dark_mode = True 
+        self.geometry("1400x820")
+        self.minsize(1000, 700)
 
         self._map_data  = None
         self._filename  = ""
@@ -682,153 +751,216 @@ class App(tk.Tk):
         self._step_event= threading.Event()
         self._delay     = 600
 
-        self._build_ui()
-        self._apply_styles()
+        self._build_dashboard_ui()
+        self._apply_ttk_styles()
+        self._on_method_change()
+        self._apply_theme() 
 
-    # ── ttk styles ───────────────────────────────────────────────
-    def _apply_styles(self):
-        s = ttk.Style(self)
-        s.theme_use("clam")
-        s.configure("TCombobox",
-                    fieldbackground=PANEL2, background=PANEL2,
-                    foreground=NODE_FG, selectbackground=BORDER,
-                    selectforeground=NODE_FG, arrowcolor=ACCENT)
-        s.map("TCombobox",
-              fieldbackground=[("readonly", PANEL2)],
-              background=[("readonly", PANEL2)])
-        s.configure("TScale",
-                    background=PANEL, troughcolor=BORDER,
-                    sliderthickness=14)
-    # ── UI layout ────────────────────────────────────────────────
-    def _build_ui(self):
-        self._build_topbar()
+    def _apply_ttk_styles(self):
+        self._style = ttk.Style(self)
+        self._style.theme_use("clam")
 
-        pane = tk.PanedWindow(self, orient=tk.HORIZONTAL,
-                              bg=BG, sashwidth=4, sashrelief=tk.FLAT)
-        pane.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0,6))
+    def _build_dashboard_ui(self):
+        self._topbar_ref = tk.Frame(self, bg=PANEL, pady=6)
+        self._topbar_ref.pack(fill=tk.X, side=tk.TOP)
 
-        # Graph canvas
-        self._canvas = GraphCanvas(pane)
-        pane.add(self._canvas, minsize=999)
-
-        # Right sidebar
-        sidebar = tk.Frame(pane, bg=PANEL, width=100)
-        sidebar.pack_propagate(False)
-        pane.add(sidebar, minsize=260)
-        self._build_sidebar(sidebar)
-
-    def _build_topbar(self):
-        bar = tk.Frame(self, bg=PANEL, pady=0)
-        bar.pack(fill=tk.X, side=tk.TOP)
-
-        # Left: logo area
-        logo = tk.Frame(bar, bg=PANEL, padx=14, pady=10)
+        logo = tk.Frame(self._topbar_ref, bg=PANEL, padx=14)
         logo.pack(side=tk.LEFT)
-        tk.Label(logo, text="ROUTE FINDER",
-                 bg=PANEL, fg=ACCENT,
-                 font=("Segoe UI", 13, "bold")).pack(side=tk.LEFT)
-        tk.Label(logo, text=" COS30019",
-                 bg=PANEL, fg=MUTED,
-                 font=("Segoe UI", 10)).pack(side=tk.LEFT, pady=1)
+        self._logo_frame = logo # Keep track of parent logo Frame
+        self._logo_label = tk.Label(logo, text="ROUTE FINDER", bg=PANEL, fg=ACCENT, font=("Segoe UI", 12, "bold"), bd=0, highlightthickness=0)
+        self._logo_label.pack(side=tk.LEFT)
+        self._logo_sub = tk.Label(logo, text=" [COS30019]", bg=PANEL, fg=MUTED, font=("Segoe UI", 9, "bold"), bd=0, highlightthickness=0)
+        self._logo_sub.pack(side=tk.LEFT, pady=1, padx=(6,0))
 
-        # Separator
-        tk.Frame(bar, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=4)
+        tk.Frame(self._topbar_ref, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=8)
 
-        # File load
-        self._file_label = tk.Label(bar, text="No file loaded",
-                                    bg=PANEL, fg=MUTED, font=FONT_UI)
+        self._file_label = tk.Label(self._topbar_ref, text="No map loaded", bg=PANEL, fg=MUTED, font=FONT_UI, bd=0, highlightthickness=0)
         self._file_label.pack(side=tk.LEFT, padx=(10,4))
-        self._btn(bar, "📂 Open Map", self._load_file, ACCENT).pack(side=tk.LEFT, padx=4)
+        self._btn_open = InteractiveButton(self._topbar_ref, "📂 Open Map", self._load_file, ACCENT)
+        self._btn_open.pack(side=tk.LEFT, padx=4)
 
-        # Method selector
-        tk.Frame(bar, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=6)
-        tk.Label(bar, text="Method:", bg=PANEL, fg=MUTED,
-                 font=FONT_UI).pack(side=tk.LEFT)
+        tk.Frame(self._topbar_ref, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=8)
+
+        self._method_label = tk.Label(self._topbar_ref, text="Method:", bg=PANEL, fg=NODE_FG, font=FONT_UI, bd=0, highlightthickness=0)
+        self._method_label.pack(side=tk.LEFT)
         self._method_var = tk.StringVar(value="DFS")
         self._method_combo = ttk.Combobox(
-            bar, textvariable=self._method_var,
-            values=METHODS, state="readonly", width=6,
+            self._topbar_ref, textvariable=self._method_var,
+            values=METHODS, state="readonly", width=8,
             font=("Consolas", 10, "bold"))
-        self._method_combo.pack(side=tk.LEFT, padx=(4,10))
+        self._method_combo.pack(side=tk.LEFT, padx=(6,10))
         self._method_combo.bind("<<ComboboxSelected>>", self._on_method_change)
 
-        # Action buttons
-        self._btn_run  = self._btn(bar, "▶  Run",  self._run_search,
-                                   SUCCESS, state=tk.DISABLED)
+        self._btn_run  = InteractiveButton(self._topbar_ref, "▶ Run",  self._run_search, SUCCESS, state=tk.DISABLED)
         self._btn_run.pack(side=tk.LEFT, padx=3)
-        self._btn_step = self._btn(bar, "⏭  Step", self._step,
-                                   WARN, state=tk.DISABLED)
+        self._btn_step = InteractiveButton(self._topbar_ref, "⏭ Step", self._step, WARN, state=tk.DISABLED)
         self._btn_step.pack(side=tk.LEFT, padx=3)
-        self._btn_reset= self._btn(bar, "↺  Reset", self._reset, MUTED)
+        self._btn_reset = InteractiveButton(self._topbar_ref, "↺ Reset", self._reset, MUTED)
         self._btn_reset.pack(side=tk.LEFT, padx=3)
 
-        # Speed
-        tk.Frame(bar, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=8)
-        tk.Label(bar, text="Speed:", bg=PANEL, fg=MUTED,
-                 font=FONT_UI).pack(side=tk.LEFT)
+        tk.Frame(self._topbar_ref, bg=BORDER, width=1).pack(side=tk.LEFT, fill=tk.Y, pady=6, padx=8)
+
+        self._speed_label = tk.Label(self._topbar_ref, text="Speed:", bg=PANEL, fg=MUTED, font=FONT_UI, bd=0, highlightthickness=0)
+        self._speed_label.pack(side=tk.LEFT)
         self._speed = tk.IntVar(value=600)
-        ttk.Scale(bar, from_=100, to=2000, orient=tk.HORIZONTAL,
-                     variable=self._speed, length=110,
-                     command=lambda v: setattr(self, "_delay", int(float(v)))
-                     ).pack(side=tk.LEFT, padx=(4, 0))
-        tk.Label(bar, text="slow", bg=PANEL, fg=MUTED,
-                 font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(2,8))
+        self._speed_scale = ttk.Scale(self._topbar_ref, from_=100, to=2000, orient=tk.HORIZONTAL,
+                     variable=self._speed, length=100,
+                     command=lambda v: setattr(self, "_delay", int(float(v))))
+        self._speed_scale.pack(side=tk.LEFT, padx=(4, 0))
+        
+        # Explicitly added label to define the slow side of speed settings
+        self._speed_slow_label = tk.Label(self._topbar_ref, text="slow", bg=PANEL, fg=MUTED, font=("Segoe UI", 8), bd=0, highlightthickness=0)
+        self._speed_slow_label.pack(side=tk.LEFT, padx=(2,8))
 
-        # Bottom divider
-        tk.Frame(self, bg=BORDER, height=1).pack(fill=tk.X)
+        self._btn_theme = InteractiveButton(self._topbar_ref, "🌓 Theme", self._toggle_theme, ACCENT)
+        self._btn_theme.pack(side=tk.RIGHT, padx=14)
 
-    def _btn(self, parent, text, cmd, color=ACCENT, state=tk.NORMAL):
-        b = tk.Button(parent, text=text, command=cmd,
-                      bg=PANEL2, fg=color,
-                      activebackground=BORDER, activeforeground=color,
-                      relief=tk.FLAT, font=FONT_UI,
-                      padx=10, pady=5, state=state,
-                      cursor="hand2", bd=0)
-        return b
+        self._div_line = tk.Frame(self, bg=BORDER, height=1)
+        self._div_line.pack(fill=tk.X)
 
-    def _build_sidebar(self, parent):
-        def section(title):
+        self._pane = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg=BORDER, sashwidth=4, sashrelief=tk.FLAT)
+        self._pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0,8))
+
+        self._canvas = GraphCanvas(self._pane)
+        self._canvas.hover_callback = self._on_node_hover_update
+        self._pane.add(self._canvas, minsize=650)
+
+        self._sidebar_ref = tk.Frame(self._pane, bg=PANEL, width=320)
+        self._sidebar_ref.pack_propagate(False)
+        self._pane.add(self._sidebar_ref, minsize=320)
+        self._build_sidebar_hud(self._sidebar_ref)
+
+    def _build_sidebar_hud(self, parent):
+        self._headers = []
+        self._header_frames = []
+        self._div_lines = []
+        self._text_widgets = []
+
+        def hud_panel(title):
             h = tk.Frame(parent, bg=PANEL)
-            h.pack(fill=tk.X, padx=10, pady=(10,0))
-            tk.Label(h, text=title, bg=PANEL, fg=ACCENT,
-                     font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
-            tk.Frame(parent, bg=BORDER, height=1).pack(fill=tk.X, padx=10, pady=(2,0))
+            h.pack(fill=tk.X, padx=12, pady=(6,0)) # Compact top padding
+            self._header_frames.append(h) # Track parent header frame!
+            
+            lbl = tk.Label(h, text=title, bg=PANEL, fg=ACCENT, font=("Segoe UI", 9, "bold"), bd=0, highlightthickness=0)
+            lbl.pack(side=tk.LEFT)
+            self._headers.append(lbl)
 
-        def text_box(height, fg=NODE_FG):
+            line = tk.Frame(parent, bg=BORDER, height=1)
+            line.pack(fill=tk.X, padx=12, pady=(2,0))
+            self._div_lines.append(line)
+
+        def output_screen(height, fg=NODE_FG):
             t = tk.Text(parent, height=height, bg=PANEL2, fg=fg,
                         font=FONT_MONO, relief=tk.FLAT,
-                        state=tk.DISABLED, padx=6, pady=4,
-                        insertbackground=ACCENT, wrap=tk.WORD,
+                        state=tk.DISABLED, padx=8, pady=4,
                         highlightthickness=1, highlightbackground=BORDER)
-            t.pack(fill=tk.X, padx=10, pady=4)
+            t.pack(fill=tk.X, padx=12, pady=2) # Compact spacing
+            self._text_widgets.append(t)
             return t
 
-        section("MAP INFO")
-        self._info_box = text_box(5, MUTED)
+        hud_panel("MAP INFO")
+        self._info_box = output_screen(4, MUTED)
 
-        section("STATUS")
-        self._status_box = text_box(5)
+        # Height of 4 displays hover connection details with zero vertical scrolling
+        hud_panel("NODE INSPECTOR")
+        self._inspect_box = output_screen(4, ACCENT)
+        self._set_text(self._inspect_box, "Hover over a node...")
 
-        section("FRONTIER  (next to expand)")
+        hud_panel("STATUS")
+        self._status_box = output_screen(3)
+
+        hud_panel("FRONTIER (next to expand)")
         self._frontier_box = tk.Listbox(
             parent, bg=PANEL2, fg=WARN, font=FONT_MONO,
             relief=tk.FLAT, selectbackground=BORDER,
-            height=6, activestyle="none",
+            height=4, activestyle="none",
             highlightthickness=1, highlightbackground=BORDER)
-        self._frontier_box.pack(fill=tk.X, padx=10, pady=4)
+        self._frontier_box.pack(fill=tk.X, padx=12, pady=2)
 
-        section("HEURISTICS  (h = Straight-Line Distance to goal)")
+        # Ensure all heuristics on default map render with zero scrolling
+        hud_panel("HEURISTICS (h = Straight-Line Distance to goal)")
         self._h_box = tk.Listbox(
-            parent, bg=PANEL2, fg="#a78bfa", font=FONT_MONO,
+            parent, bg=PANEL2, fg="#A78BFA", font=FONT_MONO,
             relief=tk.FLAT, selectbackground=BORDER,
-            height=6, activestyle="none",
+            height=7, activestyle="none",
             highlightthickness=1, highlightbackground=BORDER)
-        self._h_box.pack(fill=tk.X, padx=10, pady=4)
+        self._h_box.pack(fill=tk.X, padx=12, pady=2)
 
-        section("RESULT")
-        self._result_box = text_box(7, SUCCESS)
+        hud_panel("RESULT")
+        self._result_box = output_screen(5, SUCCESS)
+        # Reconfigured to use fill=BOTH and expand=True so the Result box dynamically occupies all remaining space
+        self._result_box.pack_configure(fill=tk.BOTH, expand=True, pady=(2, 12))
 
-    # ── helpers ──────────────────────────────────────────────────
+    def _toggle_theme(self):
+        self.dark_mode = not self.dark_mode
+        self._apply_theme()
+
+    def _apply_theme(self):
+        # Base colors ( Obsidian dark mode vs clean white layout)
+        bg     = "#0B0F19" if self.dark_mode else "#ffffff"
+        panel  = "#161B26" if self.dark_mode else "#ffffff"
+        panel2 = "#1F2633" if self.dark_mode else "#f8f9fa"
+        border = "#2F374A" if self.dark_mode else "#cbd5e1"
+        text   = "#F0F4F8" if self.dark_mode else "#1e293b"
+        muted  = "#6B7A99" if self.dark_mode else "#64748b"
+
+        self.configure(bg=bg)
+        self._canvas.dark_mode = self.dark_mode
+        self._canvas.configure(bg=bg)
+        self._topbar_ref.configure(bg=panel)
+        self._sidebar_ref.configure(bg=panel)
+        self._pane.configure(bg=border)
+        self._div_line.configure(bg=border)
+
+        # Clean dynamic styles for headers & logo container frame
+        self._logo_frame.configure(bg=panel)
+        self._logo_label.configure(bg=panel, bd=0, highlightthickness=0)
+        self._logo_sub.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
+        self._file_label.configure(bg=panel, fg=text if self._map_data else muted, bd=0, highlightthickness=0)
+        self._method_label.configure(bg=panel, fg=text, bd=0, highlightthickness=0)
+        self._speed_label.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
+        self._speed_slow_label.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
+
+        # Dynamic TTK Styling state maps (Dropdown and Slider backgrounds respect active theme)
+        self._style.map("TCombobox",
+            fieldbackground=[("readonly", panel2)],
+            background=[("readonly", panel2)],
+            foreground=[("readonly", text)],
+            selectbackground=[("readonly", border)],
+            selectforeground=[("readonly", text)]
+        )
+        self._style.configure("TScale",
+                            background=panel, troughcolor=border,
+                            sliderthickness=14)
+
+        for b in [self._btn_open, self._btn_run, self._btn_step, self._btn_reset, self._btn_theme]:
+            b.configure(bg="#1A2130" if self.dark_mode else "#eef0f7")
+
+        # Set clean flat textboxes highlights
+        for t in self._text_widgets:
+            t.configure(bg=panel2, fg=text, highlightbackground=border, highlightcolor=border)
+
+        # Update Listbox styles 
+        self._frontier_box.configure(bg=panel2, fg=WARN if self.dark_mode else "#B8860B", highlightbackground=border, highlightcolor=border)
+        self._h_box.configure(bg=panel2, fg="#A78BFA" if self.dark_mode else "#6D28D9", highlightbackground=border, highlightcolor=border)
+
+        # Dynamically updates parent container frames of each header 
+        for h_frame in self._header_frames:
+            h_frame.configure(bg=panel)
+
+        # Update dynamic blue titles in Light Theme 
+        header_color = ACCENT if self.dark_mode else "#0056b3"
+        for lbl in self._headers:
+            lbl.configure(bg=panel, fg=header_color, bd=0, highlightthickness=0)
+
+        for line in self._div_lines:
+            line.configure(bg=border)
+
+        self._update_info_hud()
+        if self._map_data:
+            self._update_h_box(self._heuristics)
+        self._canvas.redraw()
+
     def _set_text(self, w, txt):
         w.config(state=tk.NORMAL)
         w.delete("1.0", tk.END)
@@ -839,18 +971,35 @@ class App(tk.Tk):
         m = self._method_var.get()
         clr = METHOD_COLORS.get(m, ACCENT)
         self._btn_run.config(fg=clr)
-        self._set_text(self._status_box,
-            f"Method set to {m}.\nPress ▶ Run to start.")
+        self._set_text(self._status_box, f"Method set to: {m}.\nSelect a run option to begin.")
 
-    def _update_info(self):
+    def _update_info_hud(self):
         if not self._map_data: return
         o, d, nodes, adj, _ = self._map_data
         self._set_text(self._info_box,
-            f"File    : {self._filename}\n"
-            f"Origin  : {o}\n"
-            f"Goals   : {', '.join(map(str, d))}\n"
-            f"Nodes   : {len(nodes)}\n"
-            f"Edges   : {sum(len(v) for v in adj.values())}"
+            f"File: {self._filename}\n"
+            f"Origin: Node {o}\n"
+            f"Destinations: {', '.join(map(str, d))}\n"
+            f"Number of nodes: {len(nodes)}\n"
+            f"Number of edges: {sum(len(v) for v in adj.values())}"
+        )
+
+    def _on_node_hover_update(self, hovered_nid):
+        if not self._map_data or hovered_nid is None:
+            self._set_text(self._inspect_box, "Hover over a node...")
+            return
+            
+        o, d, nodes, adj, _ = self._map_data
+        coords = nodes.get(hovered_nid, (0.0, 0.0))
+        h_val = self._heuristics.get(hovered_nid, float("inf"))
+        connections = [f"{nb} (distance: {c})" for nb, c in adj.get(hovered_nid, [])]
+        conn_str = ", ".join(connections) if connections else "None"
+        
+        self._set_text(self._inspect_box,
+            f"Node: {hovered_nid}\n"
+            f"Coordinates: ({coords[0]:.1f}, {coords[1]:.1f})\n"
+            f"Heuristic h: {h_val:.2f}\n"
+            f"Connections: {conn_str}"
         )
 
     def _update_h_box(self, heuristics):
@@ -862,20 +1011,19 @@ class App(tk.Tk):
         self._frontier_box.delete(0, tk.END)
         for n in frontier:
             hv = self._heuristics.get(n, 0)
-            self._frontier_box.insert(tk.END, f"  Node {n}   h={hv:.1f}")
+            self._frontier_box.insert(tk.END, f"  Node {n}  →  h={hv:.1f}")
 
     def _update_status(self, visited, frontier, current, cost):
         m = self._method_var.get()
         self._set_text(self._status_box,
-            f"Method   : {m}\n"
-            f"Current  : {current}\n"
-            f"Visited  : {sorted(visited)}\n"
-            f"Frontier : {len(frontier)}\n"
-            f"Cost     : {cost:.2f}"
+            f"Method: {m}\n"
+            f"Current Node: {current}\n"
+            f"Visited Nodes: {len(visited)}\n"
+            f"Frontier Nodes: {len(frontier)}\n"
+            f"Path Cost: {cost:.2f}"
         )
         self._update_frontier(frontier)
 
-    # ── load file ────────────────────────────────────────────────
     def _load_file(self):
         path = filedialog.askopenfilename(
             title="Open Map File",
@@ -887,62 +1035,56 @@ class App(tk.Tk):
             self._map_data   = (origin, dests, nodes, adj, edges)
             self._filename   = os.path.basename(path)
             self._filepath   = path
-            self._file_label.config(text=self._filename, fg=NODE_FG)
+            
+            text_color = "#F0F4F8" if self.dark_mode else "#1a1d2e"
+            self._file_label.config(text=f"Loaded: {self._filename}", fg=text_color)
+            
             self._canvas.load(nodes, adj, edges, origin, dests, self._heuristics)
             self._btn_run.config(state=tk.NORMAL)
             self._btn_step.config(state=tk.NORMAL)
-            self._update_info()
+            self._update_info_hud()
             self._update_h_box(self._heuristics)
-            self._set_text(self._status_box, "Map loaded.\nChoose a method and press ▶ Run.")
+            self._set_text(self._status_box, "Map loaded.\nSelect a method to begin.")
             self._set_text(self._result_box, "—")
         except Exception as e:
             messagebox.showerror("Parse Error", str(e))
 
-    # ── reset ────────────────────────────────────────────────────
     def _reset(self):
         self._running = False
         self._is_stepping = False
         self._stop_flag.set()
-        self._step_event.set() # Unblock any sleeping loops so they can exit
+        self._step_event.set()
         
         if self._map_data:
             o, d, nodes, adj, edges = self._map_data
             self._canvas.load(nodes, adj, edges, o, d, self._heuristics)
-            self._set_text(self._status_box, "Reset. Press ▶ Run or ⏭ Step.")
+            self._set_text(self._status_box, "Reset complete.\nSelect a run option to begin.")
             self._set_text(self._result_box, "—")
             self._frontier_box.delete(0, tk.END)
             
-        # Re-enable both interaction buttons on reset
         self._btn_run.config(state=tk.NORMAL if self._map_data else tk.DISABLED)
         self._btn_step.config(state=tk.NORMAL if self._map_data else tk.DISABLED)
 
-    # ── step ─────────────────────────────────────────────────────
     def _step(self):
-        # If a search hasn't even started yet, click "Step" will initialize it in step-mode
         if not self._running:
             self._run_search(start_in_step_mode=True)
             return
             
-        # If it is running, force step mode active and advance the frame
         self._is_stepping = True
         self._step_event.set()
 
-    # ── run search ───────────────────────────────────────────────
     def _run_search(self, start_in_step_mode=False):
-        # If already executing, clicking "Run" transitions from manual step to automatic run
         if self._running:
             if self._is_stepping:
                 self._is_stepping = False
-                self._step_event.set() # Wake up the loop
+                self._step_event.set()
             return
 
-        # Initialize fresh run states
         self._running   = True
         self._is_stepping = start_in_step_mode
         self._stop_flag = threading.Event()
         self._step_event= threading.Event()
         
-        # CRITICAL: Keep buttons NORMAL so you can click them mid-search to switch modes!
         self._btn_run.config(state=tk.NORMAL)
         self._btn_step.config(state=tk.NORMAL)
 
@@ -954,17 +1096,14 @@ class App(tk.Tk):
             if self._stop_flag.is_set():
                 return False
                 
-            # Update GUI elements immediately
             self.after(0, self._canvas.update_state, visited, frontier, current)
             self.after(0, self._update_status, visited, frontier, current, cost)
             
             if self._is_stepping:
-                # Clear the event flag so it blocks until the NEXT click
                 self._step_event.clear()
                 while self._is_stepping and not self._step_event.is_set() and not self._stop_flag.is_set():
                     time.sleep(0.01)
             else:
-                # Regular automatic running mode with delay
                 deadline = time.time() + self._delay / 1000.0
                 while time.time() < deadline:
                     if self._is_stepping or self._stop_flag.is_set():
@@ -1011,20 +1150,21 @@ class App(tk.Tk):
 
         if goal is not None:
             self._canvas.update_state(self._canvas.visited, [], None, path)
-            route = " → ".join(map(str, path))
+            route = " -> ".join(map(str, path))
             self._set_text(self._result_box,
                 f"✓ Goal reached: {goal}\n"
-                f"Method       : {method}\n"
-                f"Nodes Created: {created}\n"
-                f"Path Cost    : {cost:.2f}\n\n"
+                f"Method: {method}\n"
+                f"Number of nodes created: {created}\n"
+                f"Path Cost: {cost:.2f}\n\n"
                 f"Path:\n{route}"
             )
-            self._set_text(self._status_box, f"Search complete!\nGoal: {goal}  Cost: {cost:.2f}")
+            self._set_text(self._status_box, f"Search complete.\nGoal: {goal}  Cost: {cost:.2f}")
         else:
             self._set_text(self._result_box,
                 "✗ No solution found." if not results.get("error")
                 else f"Error: {results['error']}")
-            self._set_text(self._status_box, "Search complete.\nNo solution found.")
+            self._set_text(self._status_box, "Search finished.\nNo solution found.")
+
 
 # ══════════════════════════════════════════════════════════════════
 #  ENTRY POINT
@@ -1042,7 +1182,7 @@ if __name__ == "__main__":
         sys.exit(1)
     else:
         if not _HAS_TK:
-            print("tkinter is not available — cannot launch GUI.")
+            print("tkinter is not available — running CLI mode is required.")
             print(_USAGE)
             sys.exit(1)
         App().mainloop()
