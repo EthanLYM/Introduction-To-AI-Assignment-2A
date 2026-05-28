@@ -1015,8 +1015,8 @@ class App(tk.Tk):
             self._set_text(self._result_box,
                 f"✓ Goal reached: {goal}\n"
                 f"Method       : {method}\n"
-                f"Nodes created: {created}\n"
-                f"Path cost    : {cost:.2f}\n\n"
+                f"Nodes Created: {created}\n"
+                f"Path Cost    : {cost:.2f}\n\n"
                 f"Path:\n{route}"
             )
             self._set_text(self._status_box, f"Search complete!\nGoal: {goal}  Cost: {cost:.2f}")
