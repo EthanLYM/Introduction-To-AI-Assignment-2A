@@ -359,7 +359,7 @@ def cli_mode(filepath, method):
 
     # ── output format required by the assignment spec ──
     print(f"{filepath} {m}")
-    print(f"Goal State: {', '.join(map(str, destinations))}")
+    print(f"Goal State(s): {', '.join(map(str, destinations))}")
     print(f"Starting Node: {origin}")
     if goal is not None:
         print(f"Destination Node: {goal}")
