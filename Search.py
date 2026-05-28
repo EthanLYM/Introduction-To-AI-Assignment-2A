@@ -20,7 +20,7 @@ Heuristic (GBFS / AS / CUS2): straight-line (Euclidean) distance
 to the nearest destination node.
 """
 
-import sys, os, math, time, threading, heapq
+import sys, os, math, time, threading, heapq, ctypes
 from collections import defaultdict, deque
 
 # Tkinter is only needed for GUI mode; guard the import so that CLI
@@ -45,6 +45,16 @@ except ImportError:
         def __getattr__(self, _): return lambda *a, **k: None
     ttk = _TtkStub()
     filedialog = messagebox = _TtkStub()
+
+try:
+    # Tell Windows that this app is explicitly High-DPI aware
+    ctypes.windll.shcore.SetProcessDpiAwareness(2) # 2 = Per Monitor DPI Aware
+except Exception:
+    try:
+        # Fallback for older Windows versions (Windows 7/8)
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass # Fallback for non-Windows platforms
 
 # ══════════════════════════════════════════════════════════════════
 #  PARSER
@@ -683,7 +693,7 @@ class App(tk.Tk):
         super().__init__()
         self.title("COS30019 — Route Finding Visualiser")
         self.configure(bg=BG)
-        self.geometry("1280x760")
+        self.geometry("1920x1080")
         self.minsize(900, 600)
 
         self._map_data  = None
