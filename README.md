@@ -4,9 +4,9 @@ COS30019 Assignment 2A (2026 S1)
 # COS30019 Assignment 2A — Route Finding Search Visualiser
 =========================================================
 Usage:
-  GUI mode  : python search.py
-  CLI mode  : python search.py <filename> <method>
-              methods: DFS  BFS  GBFS  AS  CUS1  CUS2
+  GUI mode: python search.py
+  CLI mode: python search.py <filename> <method>
+              methods: DFS BFS GBFS AS CUS1(UCS) CUS2(IDA*)
 
 # Algorithms
 ----------
