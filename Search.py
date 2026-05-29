@@ -1288,9 +1288,9 @@ class App(tk.Tk):
             self._canvas.update_state(self._canvas.visited, [], None, path)
             route = " -> ".join(map(str, path))
             self._set_text(self._result_box,
-                f"✓ Goal reached: {goal}\n"
+                f"✓ Goal Reached: {goal}\n"
                 f"Method: {method}\n"
-                f"Number of nodes created: {created}\n"
+                f"Number of Nodes Created: {created}\n"
                 f"Path Cost: {cost:.2f}\n\n"
                 f"Path:\n{route}"
             )
