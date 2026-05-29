@@ -876,10 +876,10 @@ class App(tk.Tk):
 
         self._canvas = GraphCanvas(self._pane)
         self._canvas.hover_callback = self._on_node_hover_update
-        self._pane.add(self._canvas, minsize=650)
+        self._pane.add(self._canvas, minsize=1000)
 
-        self._sidebar_ref = tk.Frame(self._pane, bg=PANEL, width=320)
-        self._pane.add(self._sidebar_ref, minsize=320)
+        self._sidebar_ref = tk.Frame(self._pane, bg=PANEL, width=400)
+        self._pane.add(self._sidebar_ref, minsize=400)
         self._build_sidebar_hud(self._sidebar_ref)
 
     def _build_sidebar_hud(self, parent):
