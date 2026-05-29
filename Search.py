@@ -411,7 +411,7 @@ FONT_TINY = ("Consolas", 8)
 class GraphCanvas(tk.Canvas):
     def __init__(self, master, **kw):
         super().__init__(master, bg=BG, highlightthickness=0, **kw)
-        self.dark_mode = True
+        self.dark_mode = False
         self.reset_state()
         
         # Interactive Zoom & Pan Parameters
@@ -739,7 +739,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("COS30019 — Route Finding Visualizer")
-        self.dark_mode = True 
+        self.dark_mode = False 
         self.geometry("1400x820")
         self.minsize(1000, 700)
 
