@@ -1082,7 +1082,14 @@ class App(tk.Tk):
         m = self._method_var.get()
         clr = METHOD_COLORS.get(m, ACCENT)
         self._btn_run.config(fg=clr)
-        self._set_text(self._status_box, f"Method set to: {m}.\nSelect a run option to begin.")
+        if self._map_data:
+            self._set_text(self._status_box,
+                f"Method: {m}\n"
+                f"Select a run option (run/step) to begin.")
+        else:
+            self._set_text(self._status_box,
+                f"Method: {m}\n"
+                f"Please open a map to begin.")
 
     def _update_info_hud(self):
         if not self._map_data: return
@@ -1171,7 +1178,9 @@ class App(tk.Tk):
             self._btn_step.config(state=tk.NORMAL)
             self._update_info_hud()
             self._update_h_box(self._heuristics)
-            self._set_text(self._status_box, "Map loaded.\nSelect a method to begin.")
+            self._set_text(self._status_box,
+                f'"{self._filename}" has been loaded.\n'
+                f"Select a run option (run/step) to begin.")
             self._set_text(self._result_box, "—")
         except Exception as e:
             messagebox.showerror("Parse Error", str(e))
@@ -1185,7 +1194,9 @@ class App(tk.Tk):
         if self._map_data:
             o, d, nodes, adj, edges = self._map_data
             self._canvas.load(nodes, adj, edges, o, d, self._heuristics)
-            self._set_text(self._status_box, "Reset complete.\nSelect a run option to begin.")
+            self._set_text(self._status_box,
+                f'"{self._filename}" has been reset.\n'
+                f"Select a run option (run/step) to begin.")
             self._set_text(self._result_box, "—")
             self._frontier_box.delete(0, tk.END)
             
@@ -1288,9 +1299,9 @@ class App(tk.Tk):
             self._canvas.update_state(self._canvas.visited, [], None, path)
             route = " -> ".join(map(str, path))
             self._set_text(self._result_box,
-                f"✓ Goal Reached: {goal}\n"
+                f"✓ Goal reached: {goal}\n"
                 f"Method: {method}\n"
-                f"Number of Nodes Created: {created}\n"
+                f"Number of nodes created: {created}\n"
                 f"Path Cost: {cost:.2f}\n\n"
                 f"Path:\n{route}"
             )
