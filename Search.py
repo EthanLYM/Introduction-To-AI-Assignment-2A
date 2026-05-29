@@ -659,52 +659,104 @@ class GraphCanvas(tk.Canvas):
         for i in range(len(self.solution_path) - 1):
             sol_set.add((self.solution_path[i], self.solution_path[i+1]))
 
-        edge_pairs = set((n1, n2) for n1, n2, _ in self.edges_raw)
-        processed_pairs = set()
-
+        # Build a lookup: (n1, n2) -> cost for all directed edges
+        edge_pairs = {}
         for n1, n2, cost in self.edges_raw:
-            if n1 not in self.nodes or n2 not in self.nodes: 
-                continue
-            
-            pair = tuple(sorted([n1, n2]))
-            if pair in processed_pairs:
-                continue
-            processed_pairs.add(pair)
+            edge_pairs[(n1, n2)] = cost
 
-            x1, y1 = self.to_canvas(*self.nodes[n1])
-            x2, y2 = self.to_canvas(*self.nodes[n2])
+        # Track which bidirectional pairs have had their cost label drawn
+        drawn_labels = set()
+
+        for (n1, n2), cost in edge_pairs.items():
+            if n1 not in self.nodes or n2 not in self.nodes:
+                continue
+
+            is_bidir = (n2, n1) in edge_pairs
+
+            # For bidirectional edges, only draw once (as a BOTH arrow) to
+            # avoid double lines. Draw the pair with the smaller (n1, n2) key.
+            if is_bidir and (n2, n1) in drawn_labels:
+                continue
+
+            cx1, cy1 = self.to_canvas(*self.nodes[n1])
+            cx2, cy2 = self.to_canvas(*self.nodes[n2])
+
+            # Shorten the line so endpoints sit on the node circumference,
+            # not at the centre — this keeps arrowheads visible outside nodes.
+            dx, dy = cx2 - cx1, cy2 - cy1
+            dist = math.hypot(dx, dy)
+            if dist < 1:
+                continue
+            ux, uy = dx / dist, dy / dist          # unit vector n1→n2
+            margin = NODE_R + 2                    # stop just outside the circle
+            x1 = cx1 + ux * margin
+            y1 = cy1 + uy * margin
+            x2 = cx2 - ux * margin
+            y2 = cy2 - uy * margin
 
             in_sol = (n1, n2) in sol_set or (n2, n1) in sol_set
-            
-            # Checks if any valid outgoing directed traversable connection exists between the nodes
+
+            # Hover: highlight if hovered node is either endpoint with a valid
+            # directed connection in that direction.
             is_hover_related = (
                 (self.hovered_node == n1 and (n1, n2) in edge_pairs) or
                 (self.hovered_node == n2 and (n2, n1) in edge_pairs)
             )
-            
-            if in_sol:
-                clr, shadow_clr, w = SUCCESS, "#00331A" if self.dark_mode else "#D1FAE5", 4
-            elif is_hover_related:
-                clr, shadow_clr, w = ACCENT, "#002B30" if self.dark_mode else "#E0F7FA", 3
-            else:
-                clr, shadow_clr, w = self.border_color, self.grid_minor_color, 1.5
 
-            is_bidir = (n2, n1) in edge_pairs and (n1, n2) in edge_pairs
             arrow_setting = tk.BOTH if is_bidir else tk.LAST
 
-            if in_sol or is_hover_related:
+            if is_hover_related and not in_sol:
+                # Highlighted hover edge (not part of solution)
+                clr, shadow_clr, w = ACCENT, "#002B30" if self.dark_mode else "#E0F7FA", 3
                 self.create_line(x1, y1, x2, y2,
-                                 fill=shadow_clr, width=w+6,
+                                 fill=shadow_clr, width=w + 6,
                                  arrow=arrow_setting, arrowshape=(12, 14, 5))
+                self.create_line(x1, y1, x2, y2,
+                                 fill=clr, width=w,
+                                 arrow=arrow_setting, arrowshape=(10, 12, 4))
+            elif not in_sol:
+                # Normal non-solution edge
+                self.create_line(x1, y1, x2, y2,
+                                 fill=self.border_color, width=1.5,
+                                 arrow=arrow_setting, arrowshape=(10, 12, 4))
+            # Solution path edges are drawn separately below (correct direction)
 
-            self.create_line(x1, y1, x2, y2,
-                             fill=clr, width=w,
-                             arrow=arrow_setting, arrowshape=(10, 12, 4))
+            # Draw cost label once per edge pair (use original centers for midpoint)
+            label_pair = tuple(sorted([n1, n2]))
+            if label_pair not in drawn_labels:
+                mx, my = (cx1 + cx2) / 2, (cy1 + cy2) / 2 - 8
+                self.create_text(mx, my, text=f"{cost:.0f}",
+                                 fill=ACCENT if is_hover_related else self.muted_color,
+                                 font=FONT_TINY)
+                drawn_labels.add(label_pair)
 
-            mx, my = (x1 + x2) / 2, (y1 + y2) / 2 - 8
-            self.create_text(mx, my, text=f"{cost:.0f}",
-                             fill=ACCENT if is_hover_related else self.muted_color, 
-                             font=FONT_TINY)
+            # Mark this directed pair as processed
+            drawn_labels.add((n1, n2))
+
+        # ── Draw solution path edges last, in correct traversal direction ──
+        for i in range(len(self.solution_path) - 1):
+            a, b = self.solution_path[i], self.solution_path[i + 1]
+            if a not in self.nodes or b not in self.nodes:
+                continue
+            cx1, cy1 = self.to_canvas(*self.nodes[a])
+            cx2, cy2 = self.to_canvas(*self.nodes[b])
+            dx, dy = cx2 - cx1, cy2 - cy1
+            dist = math.hypot(dx, dy)
+            if dist < 1:
+                continue
+            ux, uy = dx / dist, dy / dist
+            margin = NODE_R + 2
+            sx1 = cx1 + ux * margin
+            sy1 = cy1 + uy * margin
+            sx2 = cx2 - ux * margin
+            sy2 = cy2 - uy * margin
+            shadow_clr = "#00331A" if self.dark_mode else "#D1FAE5"
+            self.create_line(sx1, sy1, sx2, sy2,
+                             fill=shadow_clr, width=10,
+                             arrow=tk.LAST, arrowshape=(12, 14, 5))
+            self.create_line(sx1, sy1, sx2, sy2,
+                             fill=SUCCESS, width=4,
+                             arrow=tk.LAST, arrowshape=(10, 12, 4))
 
     def _draw_interactive_nodes(self):
         for nid, (nx, ny) in self.nodes.items():
