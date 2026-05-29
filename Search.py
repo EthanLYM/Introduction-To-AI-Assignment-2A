@@ -420,7 +420,7 @@ class GraphCanvas(tk.Canvas):
         self.pan_y = 0
         self.hovered_node = None
         
-        self.bind("<Configure>", lambda e: self.redraw())
+        self.bind("<Configure>", self._on_canvas_configure)
         
         # Drag to Pan (Bind to Left, Middle, and Right Clicks)
         self.bind("<ButtonPress-1>", self._start_pan)
@@ -434,6 +434,13 @@ class GraphCanvas(tk.Canvas):
         self.bind("<Motion>", self._on_mouse_move)    # Hover Detector
         
         self.hover_callback = None
+
+        self._configure_job = None
+
+    def _on_canvas_configure(self, event=None):
+        if self._configure_job is not None:
+            self.after_cancel(self._configure_job)
+        self._configure_job = self.after(30, self.redraw)
 
     def reset_state(self):
         self.nodes         = {}
@@ -565,45 +572,87 @@ class GraphCanvas(tk.Canvas):
 
     def _draw_radar_grid(self):
         w, h = self._canvas_w, self._canvas_h
-        span_x = max(self._gx_max - self._gx_min, 1)
-        span_y = max(self._gy_max - self._gy_min, 1)
 
-        def nice_step(span):
-            raw = span / 10
-            mag = 10 ** math.floor(math.log10(raw)) if raw > 0 else 1
+        # Target ~60-80 px between major gridlines regardless of zoom/pan.
+        # pixels_per_unit already embeds zoom_factor via to_canvas(), so we
+        # compute it by measuring two world points that are 1 unit apart.
+        cx0, cy0 = self.to_canvas(0, 0)
+        cx1, _   = self.to_canvas(1, 0)
+        _,   cy1 = self.to_canvas(0, 1)
+        px_per_unit_x = abs(cx1 - cx0) if abs(cx1 - cx0) > 0 else 1
+        px_per_unit_y = abs(cy1 - cy0) if abs(cy1 - cy0) > 0 else 1
+
+        TARGET_PX = 70  # desired pixel gap between major lines
+
+        def nice_step(px_per_unit):
+            raw = TARGET_PX / px_per_unit   # world-units that fill TARGET_PX px
+            if raw <= 0:
+                return 1
+            mag = 10 ** math.floor(math.log10(raw))
             for m in [1, 2, 5, 10]:
                 if raw <= m * mag:
                     return m * mag
             return mag * 10
 
-        step = nice_step(min(span_x, span_y))
+        step_x = nice_step(px_per_unit_x)
+        step_y = nice_step(px_per_unit_y)
 
-        minor = step / 5
-        x = math.floor(self._gx_min / minor) * minor
-        while x <= self._gx_max + minor:
-            cx, _ = self.to_canvas(x, 0)
-            self.create_line(cx, 0, cx, h, fill=self.grid_minor_color, width=1)
-            x += minor
-        y = math.floor(self._gy_min / minor) * minor
-        while y <= self._gy_max + minor:
-            _, cy = self.to_canvas(0, y)
-            self.create_line(0, cy, w, cy, fill=self.grid_minor_color, width=1)
-            y += minor
+        # Determine visible world-space extents (inverse of to_canvas)
+        # so we only draw lines that are actually on screen.
+        def world_x_range():
+            center_x = w / 2
+            # cx = center_x + (raw_cx - center_x)*zoom + pan_x  →  solve for data-x
+            # raw_cx = (x - min_x)*scale_x + PADDING
+            # Rearranging: x = (raw_cx - PADDING)/scale_x + min_x
+            def canvas_to_world_x(cx):
+                raw_cx = (cx - self.pan_x - center_x) / self.zoom_factor + center_x
+                return (raw_cx - PADDING) / self._scale_x + self._min_x
+            return canvas_to_world_x(0), canvas_to_world_x(w)
 
-        x = math.floor(self._gx_min / step) * step
-        while x <= self._gx_max + step:
+        def world_y_range():
+            center_y = h / 2
+            def canvas_to_world_y(cy):
+                raw_cy = (cy - self.pan_y - center_y) / self.zoom_factor + center_y
+                return (self._canvas_h - raw_cy - PADDING) / self._scale_y + self._min_y
+            return canvas_to_world_y(h), canvas_to_world_y(0)   # note: y flipped
+
+        wx_min, wx_max = world_x_range()
+        wy_min, wy_max = world_y_range()
+
+        minor_x = step_x / 5
+        minor_y = step_y / 5
+
+        x = math.floor(wx_min / minor_x) * minor_x
+        while x <= wx_max + minor_x:
             cx, _ = self.to_canvas(x, 0)
-            self.create_line(cx, 0, cx, h, fill=self.grid_main_color, width=1)
-            self.create_text(cx, h - 14, text=f"{x:.0f}",
-                             fill=self.muted_color, font=FONT_TINY, anchor="s")
-            x += step
-        y = math.floor(self._gy_min / step) * step
-        while y <= self._gy_max + step:
+            if 0 <= cx <= w:
+                self.create_line(cx, 0, cx, h, fill=self.grid_minor_color, width=1)
+            x += minor_x
+
+        y = math.floor(wy_min / minor_y) * minor_y
+        while y <= wy_max + minor_y:
             _, cy = self.to_canvas(0, y)
-            self.create_line(0, cy, w, cy, fill=self.grid_main_color, width=1)
-            self.create_text(16, cy, text=f"{y:.0f}",
-                             fill=self.muted_color, font=FONT_TINY, anchor="w")
-            y += step
+            if 0 <= cy <= h:
+                self.create_line(0, cy, w, cy, fill=self.grid_minor_color, width=1)
+            y += minor_y
+
+        x = math.floor(wx_min / step_x) * step_x
+        while x <= wx_max + step_x:
+            cx, _ = self.to_canvas(x, 0)
+            if 0 <= cx <= w:
+                self.create_line(cx, 0, cx, h, fill=self.grid_main_color, width=1)
+                self.create_text(cx, h - 14, text=f"{x:.0f}",
+                                 fill=self.muted_color, font=FONT_TINY, anchor="s")
+            x += step_x
+
+        y = math.floor(wy_min / step_y) * step_y
+        while y <= wy_max + step_y:
+            _, cy = self.to_canvas(0, y)
+            if 0 <= cy <= h:
+                self.create_line(0, cy, w, cy, fill=self.grid_main_color, width=1)
+                self.create_text(16, cy, text=f"{y:.0f}",
+                                 fill=self.muted_color, font=FONT_TINY, anchor="w")
+            y += step_y
 
     def _draw_interactive_edges(self):
         sol_set = set()
@@ -820,13 +869,16 @@ class App(tk.Tk):
 
         self._pane = tk.PanedWindow(self, orient=tk.HORIZONTAL, bg=BORDER, sashwidth=4, sashrelief=tk.FLAT)
         self._pane.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0,8))
+        self._pane_resize_job = None
+        self._pane.bind("<Configure>", self._on_pane_configure)
+        self._pane.bind("<ButtonRelease-1>", lambda e: self._canvas.redraw())
+        self._pane.bind("<B1-Motion>", self._on_sash_drag)
 
         self._canvas = GraphCanvas(self._pane)
         self._canvas.hover_callback = self._on_node_hover_update
         self._pane.add(self._canvas, minsize=650)
 
         self._sidebar_ref = tk.Frame(self._pane, bg=PANEL, width=320)
-        self._sidebar_ref.pack_propagate(False)
         self._pane.add(self._sidebar_ref, minsize=320)
         self._build_sidebar_hud(self._sidebar_ref)
 
@@ -855,6 +907,8 @@ class App(tk.Tk):
                         state=tk.DISABLED, padx=8, pady=4,
                         highlightthickness=1, highlightbackground=BORDER)
             t.pack(fill=tk.X, padx=12, pady=2) # Compact spacing
+            # Store the intended fg so _apply_theme can restore it per-widget
+            t._fixed_fg = fg
             self._text_widgets.append(t)
             return t
 
@@ -936,9 +990,14 @@ class App(tk.Tk):
         for b in [self._btn_open, self._btn_run, self._btn_step, self._btn_reset, self._btn_theme]:
             b.configure(bg="#1A2130" if self.dark_mode else "#eef0f7")
 
-        # Set clean flat textboxes highlights
+        # Set clean flat textboxes highlights — preserve each widget's own fg color
         for t in self._text_widgets:
-            t.configure(bg=panel2, fg=text, highlightbackground=border, highlightcolor=border)
+            # Widgets with a fixed accent color (result=green, inspect=cyan, info=muted)
+            # keep that color in both themes; only plain NODE_FG boxes follow the theme text color.
+            widget_fg = getattr(t, '_fixed_fg', None)
+            if widget_fg in (None, NODE_FG):
+                widget_fg = text
+            t.configure(bg=panel2, fg=widget_fg, highlightbackground=border, highlightcolor=border)
 
         # Update Listbox styles 
         self._frontier_box.configure(bg=panel2, fg=WARN if self.dark_mode else "#B8860B", highlightbackground=border, highlightcolor=border)
@@ -1024,6 +1083,22 @@ class App(tk.Tk):
         )
         self._update_frontier(frontier)
 
+    def _on_pane_configure(self, event=None):
+        # Only redraw the canvas on configure; sidebar widgets are native Tk
+        # frames so they reflow automatically — no extra redraw needed.
+        # Use a short debounce so rapid events during window resize are coalesced.
+        if self._pane_resize_job is not None:
+            self.after_cancel(self._pane_resize_job)
+        self._pane_resize_job = self.after(16, self._canvas.redraw)
+
+    def _on_sash_drag(self, event=None):
+        # During sash drag, skip mid-motion canvas redraws entirely.
+        # _on_pane_configure fires but we cancel it immediately; the
+        # ButtonRelease bind does the one final clean redraw.
+        if self._pane_resize_job is not None:
+            self.after_cancel(self._pane_resize_job)
+        self._pane_resize_job = None
+
     def _load_file(self):
         path = filedialog.askopenfilename(
             title="Open Map File",
@@ -1079,6 +1154,15 @@ class App(tk.Tk):
                 self._is_stepping = False
                 self._step_event.set()
             return
+
+        # Clear any leftover solution/visited state from a previous run
+        self._canvas.solution_path = []
+        self._canvas.visited       = set()
+        self._canvas.frontier      = set()
+        self._canvas.current_node  = None
+        self._canvas.redraw()
+        self._set_text(self._result_box, "—")
+        self._frontier_box.delete(0, tk.END)
 
         self._running   = True
         self._is_stepping = start_in_step_mode
