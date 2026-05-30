@@ -261,8 +261,9 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
     dest_set = set(destinations)
     h        = make_heuristic(nodes_coords, destinations)
     created  = [1]
+    gui_visited = {origin}
 
-    def _dfs(node, g, threshold, path_set, path, cost):
+    def _dfs(node, g, threshold, path_set, path, cost, mg):
         """Return (next_threshold | -1_if_found, goal, result_path, result_cost)."""
         f = g + h(node)
         if f > threshold:
@@ -274,18 +275,28 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
         minimum = float("inf")
         for nb, ec in _neighbours(node, adj):
             if nb not in path_set:
+                if g + ec >= mg.get(nb, float("inf")):
+                    continue
+                f_nb = g + ec + h(nb)
+                if f_nb > threshold:
+                    if f_nb < minimum:
+                        minimum = f_nb
+                    continue
+
+                mg[nb] = g + ec
                 path.append(nb)
                 path_set.add(nb)
+                gui_visited.add(nb)
                 created[0] += 1
 
                 if step_callback:
-                    if step_callback([], set(path_set), nb, path[:], g + ec) is False:
+                    if step_callback([], set(gui_visited), nb, path[:], g + ec) is False:
                         # abort requested
                         path.pop(); path_set.discard(nb)
                         return -2, None, [], 0.0
 
                 t, goal, rpath, rcost = _dfs(nb, g + ec, threshold,
-                                             path_set, path, g + ec)
+                                             path_set, path, g + ec, mg)
                 path.pop()
                 path_set.discard(nb)
 
@@ -302,13 +313,15 @@ def cus2(origin, destinations, nodes_coords, adj, step_callback=None):
     while True:
         path     = [origin]
         path_set = {origin}
-        t, goal, rpath, rcost = _dfs(origin, 0.0, threshold, path_set, path, 0.0)
+        mg       = {origin: 0.0}
+        t, goal, rpath, rcost = _dfs(origin, 0.0, threshold, path_set, path, 0.0, mg)
 
         if t == -1:
             return goal, rpath, rcost, created[0]
         if t == -2 or t == float("inf"):
             return None, [], 0.0, created[0]
         threshold = t
+
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -904,14 +917,14 @@ class App(tk.Tk):
         self._speed_label = tk.Label(self._topbar_ref, text="Speed:", bg=PANEL, fg=MUTED, font=FONT_UI, bd=0, highlightthickness=0)
         self._speed_label.pack(side=tk.LEFT)
         self._speed = tk.IntVar(value=600)
-        self._speed_scale = ttk.Scale(self._topbar_ref, from_=100, to=2000, orient=tk.HORIZONTAL,
+        self._speed_scale = ttk.Scale(self._topbar_ref, from_=2000, to=0, orient=tk.HORIZONTAL,
                      variable=self._speed, length=100,
                      command=lambda v: setattr(self, "_delay", int(float(v))))
         self._speed_scale.pack(side=tk.LEFT, padx=(4, 0))
         
-        # Explicitly added label to define the slow side of speed settings
-        self._speed_slow_label = tk.Label(self._topbar_ref, text="slow", bg=PANEL, fg=MUTED, font=("Segoe UI", 8), bd=0, highlightthickness=0)
-        self._speed_slow_label.pack(side=tk.LEFT, padx=(2,8))
+        # Explicitly added label to define the fast side of speed settings
+        self._speed_fast_label = tk.Label(self._topbar_ref, text="fast", bg=PANEL, fg=MUTED, font=("Segoe UI", 8), bd=0, highlightthickness=0)
+        self._speed_fast_label.pack(side=tk.LEFT, padx=(2,8))
 
         self._btn_theme = InteractiveButton(self._topbar_ref, "🌓 Theme", self._toggle_theme, ACCENT)
         self._btn_theme.pack(side=tk.RIGHT, padx=14)
@@ -1025,7 +1038,7 @@ class App(tk.Tk):
         self._file_label.configure(bg=panel, fg=text if self._map_data else muted, bd=0, highlightthickness=0)
         self._method_label.configure(bg=panel, fg=text, bd=0, highlightthickness=0)
         self._speed_label.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
-        self._speed_slow_label.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
+        self._speed_fast_label.configure(bg=panel, fg=muted, bd=0, highlightthickness=0)
 
         # Dynamic TTK Styling state maps (Dropdown and Slider backgrounds respect active theme)
         self._style.map("TCombobox",
