@@ -684,7 +684,8 @@ class GraphCanvas(tk.Canvas):
             if n1 not in self.nodes or n2 not in self.nodes:
                 continue
 
-            is_bidir = (n2, n1) in edge_pairs
+            # Only treat as truly bidirectional if BOTH directions exist AND costs are equal
+            is_bidir = (n2, n1) in edge_pairs and edge_pairs[(n2, n1)] == edge_pairs[(n1, n2)]
 
             # For bidirectional edges, only draw once (as a BOTH arrow) to
             # avoid double lines. Draw the pair with the smaller (n1, n2) key.
@@ -737,10 +738,25 @@ class GraphCanvas(tk.Canvas):
             # Draw cost label once per edge pair (use original centers for midpoint)
             label_pair = tuple(sorted([n1, n2]))
             if label_pair not in drawn_labels:
-                mx, my = (cx1 + cx2) / 2, (cy1 + cy2) / 2 - 8
-                self.create_text(mx, my, text=f"{cost:.0f}",
-                                 fill=ACCENT if is_hover_related else self.muted_color,
-                                 font=FONT_TINY)
+                mx, my = (cx1 + cx2) / 2, (cy1 + cy2) / 2
+                reverse_cost = edge_pairs.get((n2, n1))
+                if reverse_cost is not None and reverse_cost != cost:
+                    # Two different costs — offset each label to opposite sides of the edge
+                    # Perpendicular offset so labels don't overlap
+                    if dist > 0:
+                        px, py = -dy / dist * 10, dx / dist * 10  # perpendicular unit * 10px
+                    else:
+                        px, py = 0, -10
+                    self.create_text(mx + px, my + py - 4, text=f"{cost:.0f}",
+                                    fill=ACCENT if is_hover_related else self.muted_color,
+                                    font=FONT_TINY)
+                    self.create_text(mx - px, my - py + 4, text=f"{reverse_cost:.0f}",
+                                    fill=ACCENT if is_hover_related else self.muted_color,
+                                    font=FONT_TINY)
+                else:
+                    self.create_text(mx, my - 8, text=f"{cost:.0f}",
+                                    fill=ACCENT if is_hover_related else self.muted_color,
+                                    font=FONT_TINY)
                 drawn_labels.add(label_pair)
 
             # Mark this directed pair as processed
