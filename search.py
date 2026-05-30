@@ -800,17 +800,16 @@ class GraphCanvas(tk.Canvas):
                 fill, ring, rw = ACCENT2, "#FFFFFF", 3
             elif self.solution_path and nid in self.solution_path:
                 fill, ring, rw = SUCCESS,  "#FFFFFF", 2
-            elif nid in self.visited:
-                fill, ring, rw = VISITED_C, "#7C4DFF", 2
             elif nid in self.frontier:
-                fill, ring, rw = "#FFE066", WARN,    2
+                fill, ring, rw = "#FFE066", WARN,    2 # Yellow (Frontier checked first)
+            elif nid in self.visited:
+                fill, ring, rw = VISITED_C, "#7C4DFF", 2 # Purple (Visited)
             elif nid == self.origin:
                 fill, ring, rw = "#00E5FF", ACCENT, 2
             elif nid in self.dests:
                 fill, ring, rw = GOAL_CLR, "#FF6F00", 2
             else:
                 fill, ring, rw = self.node_bg_color, self.border_color, 1.5
-
             if nid == self.current_node or nid == self.hovered_node:
                 self.create_oval(cx-r-6, cy-r-6, cx+r+6, cy+r+6,
                                  fill="", outline=ACCENT if nid == self.hovered_node else ACCENT2, 
@@ -1168,7 +1167,7 @@ class App(tk.Tk):
         self._set_text(self._status_box,
             f"Method: {m}\n"
             f"Current Node: {current}\n"
-            f"Visited Nodes: {len(visited)}\n"
+            f"Visited Nodes: {len(visited - set(frontier))}\n"
             f"Frontier Nodes: {len(frontier)}\n"
             f"Path Cost: {cost:.2f}"
         )
