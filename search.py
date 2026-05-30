@@ -827,7 +827,7 @@ class GraphCanvas(tk.Canvas):
             if nid in self.heuristics:
                 hv = self.heuristics[nid]
                 self.create_text(cx, cy - r - 9,
-                                 text=f"h={hv:.1f}",
+                                 text=f"h={hv:.2f}",
                                  fill=WARN if self.dark_mode else "#B8860B", font=FONT_TINY)
 
         self._draw_legend_panel()
@@ -1147,7 +1147,7 @@ class App(tk.Tk):
         
         self._set_text(self._inspect_box,
             f"Node: {hovered_nid}\n"
-            f"Coordinates: ({coords[0]:.1f}, {coords[1]:.1f})\n"
+            f"Coordinates: ({coords[0]:.2f}, {coords[1]:.2f})\n"
             f"Heuristic h: {h_val:.2f}\n"
             f"Connections: {conn_str}"
         )
@@ -1161,7 +1161,7 @@ class App(tk.Tk):
         self._frontier_box.delete(0, tk.END)
         for n in frontier:
             hv = self._heuristics.get(n, 0)
-            self._frontier_box.insert(tk.END, f"  Node {n}  →  h={hv:.1f}")
+            self._frontier_box.insert(tk.END, f"  Node {n}  →  h={hv:.2f}")
 
     def _update_status(self, visited, frontier, current, cost):
         m = self._method_var.get()
