@@ -154,18 +154,20 @@ def bfs(origin, destinations, adj, step_callback=None):
 
 # ── GBFS ─────────────────────────────────────────────────────────
 def gbfs(origin, destinations, nodes_coords, adj, step_callback=None):
-    dest_set = set(destinations)
-    h        = make_heuristic(nodes_coords, destinations)
-    heap     = [(h(origin), 0, origin, [origin], 0.0)]
-    visited  = set()
-    counter  = 1
-    created  = 1
+    dest_set    = set(destinations)
+    h           = make_heuristic(nodes_coords, destinations)
+    heap        = [(h(origin), 0, origin, [origin], 0.0)]
+    visited     = set()
+    in_frontier = {origin}        
+    counter     = 1
+    created     = 1
 
     while heap:
         _, _, node, path, cost = heapq.heappop(heap)
         if node in visited:
             continue
         visited.add(node)
+        in_frontier.discard(node)  
 
         if step_callback:
             front = [x[2] for x in heap]
@@ -176,10 +178,11 @@ def gbfs(origin, destinations, nodes_coords, adj, step_callback=None):
             return node, path, cost, created
 
         for nb, ec in _neighbours(node, adj):
-            if nb not in visited:
+            if nb not in visited and nb not in in_frontier:  # ← CHANGE THIS
                 heapq.heappush(heap, (h(nb), counter, nb, path + [nb], cost + ec))
                 counter += 1
                 created += 1
+                in_frontier.add(nb)  
 
     return None, [], 0.0, created
 
